@@ -1,6 +1,6 @@
 /***********************************************************
  *
- *      NetCow - A simple TCP/UDP Poly Server Written in Rust.
+ *      IPCow - A simple TCP/UDP Poly Server Written in Rust.
  *          Listen, log, enumerate ports (1 port per thread?)
  *          Send TCP/UDP responses.
  *      Isaiah Tyler Jackson
