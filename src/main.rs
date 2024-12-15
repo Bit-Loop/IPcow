@@ -44,9 +44,9 @@ fn main() -> std::io::Result<()> {
         info: AddrType::IPv4,
         socket_type: AddrType::UDP,
         address: (127,0,0,1),
-        port: 80,
+        port: 22,
     };
-    let home:AddrData = AddrData{
+    let home:AddrData = AddrData{ // Example Test assignment
         ..default
     };
 
@@ -75,11 +75,17 @@ fn main() -> std::io::Result<()> {
     println!("Socket Addresses: {:?}", socket_address[0]);
     println!("Is IP 0 in socket_address IPv4 using core libs?: {:}", socket_address[0].is_ipv4());
 
-    let mut stream_generic = TcpStream::connect(socket_address[0]);
+    // The following line returns an error if there is a failure to connect and propagates said error.
+    let mut stream_generic = TcpStream::connect(socket_address[0])?;
 
     // IDK what this does.
-    stream_generic.write(&[1])?;
-    stream_generic?.read(&mut [0, 128])?;
+    stream_generic.write(&[1]);
+
+    // Closed port on IP gives: { code: 111, kind: ConnectionRefused, message: "Connection refused" }
+    // Correct/open port gives: { Ok(2) }
+    let mut wtf_is_this = stream_generic.read(&mut [0, 128]);
+    println!("WTF is this?, {:?}", wtf_is_this);
+
 
 Ok(())
 }
