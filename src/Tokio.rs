@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         socket_addr_create(home.address, home.port),
         socket_addr_create(home.address, home.port + 1),
     ];
-
+    println!("Socket Addresses: {:?}", socket_address[0]);
 
     loop {
         let (mut socket, _) = listener.accept().await?;
