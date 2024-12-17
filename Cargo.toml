@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "*", features = ["full"] }
+ipnetwork = "*"
 
 [lib]
 name = "sockparse"

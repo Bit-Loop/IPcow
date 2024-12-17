@@ -14,10 +14,10 @@
  *   - High performance through parallelization.
  *   - Ease of integration into any Rust-based networking environment.
  *
- * 🚀 **Version**:      0.0.2  
- * 🛠️  **Created**:      December 12, 2024  
- * 🔄 **Last Update**:   December 17, 2024  
- * 🧑‍💻 **Author**:       Isaiah Tyler Jackson  
+ * 🚀 Version**:       0.0.2  
+ * 🛠️  Created**:      December 12, 2024  
+ * 🔄 Last Update**:   December 17, 2024  
+ * 🧑‍💻 Author:          Isaiah Tyler Jackson  
  *********************************************************************
  */
 
@@ -27,14 +27,11 @@
  use tokio::net::{TcpListener, TcpStream};
  use tokio::io::{AsyncReadExt, AsyncWriteExt};
  use std::io::{self, stdin, stdout, Write};
+ use sockparse::{addr_input}; 
 
  #[tokio::main]
  async fn main() -> Result<(), Box<dyn std::error::Error>> {
      let system_thread_count = available_parallelism().unwrap().get(); // Get Thread Count for the current system
-    let fn_test = addr_input();
-    println!("FN TEST: {}", fn_test);
-
-
 
     let default = AddrData {
          info: AddrType::IPv4,
@@ -58,10 +55,10 @@
          _ => "ITS NOT VALID!!!",
      };
  
-     print!("\n\nNum of cores: {}\n\n ", system_thread_count);
+     print!("\n\nNum of cores: {}\n\n", system_thread_count);
      println!(
          "Address: {:?}\nPort: {:?},\nAddr Type: {}\nIP Socket Type: {}",
-         home.address, home.port, ip_type_text, ip_socket_text
+        home.address, home.port, ip_type_text, ip_socket_text
      );
  
      // Using a helper function to construct socket_addressess
@@ -157,21 +154,6 @@
      address: (u8, u8, u8, u8),
      port: u16,
  }
- 
- fn addr_input() -> String {    
-    println!("Enter the listen IP addresses.\nFromat is: 255.255.255.0-255.255.255.255, or 192.168.1.X" or 192.168.1.0/24);
-    let mut  input_addr = String::new();
-    io::stdin().read_line(&mut input_addr).expect("Invalid user input, please try again.");
-    println!("{}", input_addr);
-    println!("Enter the listen IP ports.\nFormat is: 0-65536, or \"1, 2, 5\"");
-    let mut  input_ports = String::new();
-    io::stdin().read_line(&mut input_ports).expect("Invalid user input, please try again.");
-    println!("{}", input_ports);
-    input_addr
- }
-
-
-
 
  // FN Helper to help create socket_address
  fn socket_addr_create(address: (u8, u8, u8, u8), port: u16) -> SocketAddr {
