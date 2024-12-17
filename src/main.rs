@@ -1,47 +1,46 @@
-/***********************************************************
+/*!
+ *********************************************************************
+ *                           🐮 IPCow 🐮                             
+ *       A **simple, robust TCP/UDP Poly Server** written in Rust.  
+ * ------------------------------------------------------------------
+ * 📡 **Features**:
+ *   - Listen on multiple IP addresses and ports.
+ *   - Log incoming connections and traffic.
+ *   - Enumerate and manage ports (1 port per thread, optimized).
+ *   - Send TCP/UDP responses seamlessly.
  *
- *      IPCow - A simple TCP/UDP Poly Server Written in Rust.
- *          Listen, log, enumerate ports (1 port per thread?)
- *          Send TCP/UDP responses.
- *      Isaiah Tyler Jackson
- *      Created:    Dec 12 2024
- *      Last_ITR:   Dec 16 2024
- *      Version:    00.00.02
+ * 🔧 **Designed For**: 
+ *   - Flexibility in multi-address and multi-port setups.
+ *   - High performance through parallelization.
+ *   - Ease of integration into any Rust-based networking environment.
  *
- * 
- ***********************************************************/
+ * 🚀 **Version**:      0.0.2  
+ * 🛠️  **Created**:      December 12, 2024  
+ * 🔄 **Last Update**:   December 17, 2024  
+ * 🧑‍💻 **Author**:       Isaiah Tyler Jackson  
+ *********************************************************************
+ */
 
  #![allow(unused)]
  use std::net::{Ipv4Addr, SocketAddr};
  use std::thread::available_parallelism;
  use tokio::net::{TcpListener, TcpStream};
  use tokio::io::{AsyncReadExt, AsyncWriteExt};
- 
- #[derive(Debug, PartialEq)]
- enum AddrType {
-     IPv4,
-     IPv6,
-     TCP,
-     UDP,
- }
- 
- #[derive(Debug)]
- struct AddrData {
-     info: AddrType,
-     socket_type: AddrType,
-     address: (u8, u8, u8, u8),
-     port: u16,
- }
- 
+ use std::io::{self, stdin, stdout, Write};
+
  #[tokio::main]
  async fn main() -> Result<(), Box<dyn std::error::Error>> {
      let system_thread_count = available_parallelism().unwrap().get(); // Get Thread Count for the current system
- 
+    let fn_test = addr_input();
+    println!("FN TEST: {}", fn_test);
+
+
+
     let default = AddrData {
          info: AddrType::IPv4,
          socket_type: AddrType::UDP,
          address: (192, 168, 1, 16),
-         port: 8999,
+         port: 9999
      };
     let home: AddrData = AddrData { // Example Test assignment
          ..default
@@ -142,6 +141,38 @@
      }
  }
  
+  
+ #[derive(Debug, PartialEq)]
+ enum AddrType {
+     IPv4,
+     IPv6,
+     TCP,
+     UDP,
+ }
+ 
+ #[derive(Debug)]
+ struct AddrData {
+     info: AddrType,
+     socket_type: AddrType,
+     address: (u8, u8, u8, u8),
+     port: u16,
+ }
+ 
+ fn addr_input() -> String {    
+    println!("Enter the listen IP addresses.\nFromat is: 255.255.255.0-255.255.255.255, or 192.168.1.X" or 192.168.1.0/24);
+    let mut  input_addr = String::new();
+    io::stdin().read_line(&mut input_addr).expect("Invalid user input, please try again.");
+    println!("{}", input_addr);
+    println!("Enter the listen IP ports.\nFormat is: 0-65536, or \"1, 2, 5\"");
+    let mut  input_ports = String::new();
+    io::stdin().read_line(&mut input_ports).expect("Invalid user input, please try again.");
+    println!("{}", input_ports);
+    input_addr
+ }
+
+
+
+
  // FN Helper to help create socket_address
  fn socket_addr_create(address: (u8, u8, u8, u8), port: u16) -> SocketAddr {
      SocketAddr::from((Ipv4Addr::new(address.0, address.1, address.2, address.3), port))
