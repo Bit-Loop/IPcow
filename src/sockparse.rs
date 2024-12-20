@@ -42,6 +42,7 @@
 
     // Normalize input to uppercase for wildcard processing
     let normalized_input = input.to_uppercase();
+    // Initialize Chunk Stack
 
     if normalized_input.contains('-') {
         // Handle IP range: "192.168.1.1-192.168.1.255"
@@ -156,9 +157,8 @@
      let ports = parse_port_input(&port_input);
  
      // Output results
-     println!("Parsed IP Addresses: {:?}", ips);
-     println!("Parsed Ports: {:?}", ports);
+     println!("Parsed IP Addresses: {:?}", ips.len());
+     println!("Parsed Ports: {:?}", ports.len());
  
      (ips, ports)
  }
- 
