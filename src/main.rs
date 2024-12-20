@@ -22,19 +22,21 @@
  */
 
 #![allow(unused)]
-use std::default;
-use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex};
-use std::thread::available_parallelism;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use std::io::{self, stdin, stdout, Write};
-use sockparse::{addr_input,parse_ip_input}; 
-use std::num::NonZeroUsize;
-use tokio::sync::Semaphore;
+use std::{
+    default, io::{self, stdin, stdout, Write},
+    net::{Ipv4Addr, SocketAddr},
+    num::NonZeroUsize,
+    sync::{atomic::AtomicUsize, Arc, Mutex},
+    thread::available_parallelism,
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    sync::Semaphore,
+};
 use futures::stream::StreamExt; // For `for_each_concurrent`
 use itertools::Itertools; // For `chunks`
+use sockparse::{addr_input, parse_ip_input};
 
 
 
