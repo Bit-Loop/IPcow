@@ -9,64 +9,188 @@
  *   - Enumerate and manage ports (1 port per thread, optimized).
  *   - Send TCP/UDP responses seamlessly.
  *
- * 🔧 **Designed For**: 
+ * 🔧 **Designed For**:
  *   - Flexibility in multi-address and multi-port setups.
  *   - High performance through parallelization.
  *   - Ease of integration into any Rust-based networking environment.
  *
  * 🚀 Version**:       0.0.2  
 * 🛠️  Created-**:      December 12, 2024  
- * 🔄 Last Update**:   December 19, 2024  
+ * 🔄 Last Update**:   Jan 1, 2025  
  * 🧑‍💻 Author:          Isaiah Tyler Jackson  
  *********************************************************************
  */
 
 #![allow(unused)]
+
 use std::{
-    default, io::{self, stdin, stdout, Write},
+    io::{self, stdin, stdout, Write},
     net::{Ipv4Addr, SocketAddr},
     num::NonZeroUsize,
-    sync::{atomic::AtomicUsize, Arc, Mutex},
+    sync::{atomic::AtomicUsize, Arc},
     thread::available_parallelism,
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    collections::hash_map::DefaultHasher,
 };
+
+use futures::stream::StreamExt;
+use itertools::Itertools;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::Semaphore,
+    sync::{Mutex, Semaphore},
+    time::{timeout, Duration},
 };
-use futures::stream::StreamExt; // For `for_each_concurrent`
-use itertools::Itertools; // For `chunks`
+
 use sockparse::{addr_input, parse_ip_input};
 
+// Error Registry for deduplication
+#[derive(Debug, Default)]
+struct ErrorRegistry {
+    errors: HashMap<u64, String>
+}
 
+impl ErrorRegistry {
+    fn new() -> Self {
+        Self { errors: HashMap::new() }
+    }
 
- #[tokio::main]
- async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let system_thread_count = available_parallelism().unwrap().get(); // Get Thread Count for the current system
+    fn register_error(&mut self, error: &str) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        error.hash(&mut hasher);
+        let id = hasher.finish();
+        self.errors.entry(id).or_insert_with(|| error.to_string());
+        id
+    }
+}
+
+struct ListenerManager {
+    error_registry: Arc<Mutex<ErrorRegistry>>,
+    addr_data: Arc<Vec<AddrData>>,
+    max_concurrent: usize,
+    timeout_duration: Duration,
+}
+
+impl ListenerManager {
+    fn new(addr_data: Vec<AddrData>, max_concurrent: usize) -> Self {
+        Self {
+            error_registry: Arc::new(Mutex::new(ErrorRegistry::new())),
+            addr_data: Arc::new(addr_data),
+            max_concurrent,
+            timeout_duration: Duration::from_secs(30),
+        }
+    }
+
+    async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut listener_tasks = Vec::new();
+        let semaphore = Arc::new(Semaphore::new(self.max_concurrent));
+
+        for addr_data in self.addr_data.iter() {
+            let permit = semaphore.clone().acquire_owned().await?;
+            let error_registry = self.error_registry.clone();
+            let socket_addr = socket_addr_create(addr_data.address, addr_data.port);
+            
+            let task = tokio::spawn(async move {
+                match TcpListener::bind(&socket_addr).await {
+                    Ok(listener) => {
+                        println!("Listening on: {}", socket_addr);
+                        
+                        loop {
+                            match timeout(Duration::from_secs(30), listener.accept()).await {
+                                Ok(Ok((mut socket, addr))) => {  // Added mut here
+                                    tokio::spawn(async move {
+                                        let mut stream_buffer = [0u8; 1024];
+                                        let mut stream_read_data = Vec::new();
+                                        
+                                        loop {
+                                            match socket.read(&mut stream_buffer).await {
+                                                Ok(0) => {
+                                                    println!("Connection closed by peer: {:?}", addr);
+                                                    break;
+                                                }
+                                                Ok(bytes_read) => {
+                                                    println!("Stream Read Buffer: {:?}", &stream_buffer[..bytes_read]);
+                                                    stream_read_data.extend_from_slice(&stream_buffer[..bytes_read]);
+                                                    if stream_read_data.ends_with(&[13, 10]) {
+                                                        println!("RECEIVED TERMINATION SEQUENCE!");
+                                                        break;
+                                                    }
+                                                    if let Err(e) = socket.write_all(&stream_buffer[..bytes_read]).await {
+                                                        eprintln!("Failed to write to socket: {:?}", e);
+                                                        break;
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    eprintln!("Error reading from socket: {:?}", e);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    });
+                                }
+                                Ok(Err(e)) => {
+                                    let mut registry = error_registry.lock().await;
+                                    let error_id = registry.register_error(&e.to_string());
+                                    println!("Accept error on {}: ID {}", socket_addr, error_id);
+                                }
+                                Err(_) => {
+                                    let mut registry = error_registry.lock().await;
+                                    let error_id = registry.register_error("Connection timeout");
+                                    println!("Timeout on {}: ID {}", socket_addr, error_id);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let mut registry = error_registry.lock().await;
+                        let error_id = registry.register_error(&e.to_string());
+                        println!("Bind error on {}: ID {}", socket_addr, error_id);
+                    }
+                }
+                drop(permit);
+            });
+            
+            listener_tasks.push(task);
+        }
+
+        futures::future::join_all(listener_tasks).await;
+        Ok(())
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let system_thread_count = available_parallelism().unwrap().get();
     let max_workers = get_thread_factor();
     //let max_conn = get_max_conn_count();
 
-    let (ips_vec, ports_vec) = addr_input(); // Returns a tuple (Vec<Ipv4Addr>, Vec<u16>)
-    let mut addr_data_list: Vec<AddrData> = Vec::new(); // vector of <enum struct>
-    let ips = Arc::new(ips_vec); // Wrap `ips` in Arc for shared ownership
-let ports = Arc::new(ports_vec); // Wrap `ports` in Arc for shared ownership
+    let (ips_vec, ports_vec) = addr_input();
+    let mut addr_data_list: Vec<AddrData> = Vec::new();
+    let ips = Arc::new(ips_vec);
+    let ports = Arc::new(ports_vec);
 
-// Now we create addr_data_list directly:
-let addr_data_list: Vec<AddrData> = ips.iter()
-    .flat_map(|ip| {
-        ports.iter().map(move |port| AddrData {
-            info: AddrType::IPv4,
-            socket_type: AddrType::TCP,
-            address: ip.octets().into(),
-            port: *port,
+    // Now we create addr_data_list directly:
+    let addr_data_list: Vec<AddrData> = ips
+        .iter()
+        .flat_map(|ip| {
+            ports.iter().map(move |port| AddrData {
+                info: AddrType::IPv4,
+                socket_type: AddrType::TCP,
+                address: ip.octets().into(),
+                port: *port,
+            })
         })
-    })
-    .collect();
+        .collect();
 
-let addr_data_list = Arc::new(addr_data_list); // Wrap final list in Arc for shared ownership
+    let addr_data_list = Arc::new(addr_data_list); // Wrap final list in Arc for shared ownership
 
     let chunk_size = ((addr_data_list.len() + (max_workers - 1)) / max_workers).max(1);
-    println!("ADDR DATA LEN: {:?}, Chunk Size: {:?}", addr_data_list.len(), chunk_size);
+    println!(
+        "ADDR DATA LEN: {:?}, Chunk Size: {:?}",
+        addr_data_list.len(),
+        chunk_size
+    );
 
     let max_concurrent_tasks = 8; // Adjust based on available cores and workload
     let semaphore = Arc::new(Semaphore::new(max_concurrent_tasks));
@@ -74,7 +198,11 @@ let addr_data_list = Arc::new(addr_data_list); // Wrap final list in Arc for sha
     let addr_iter = ips.iter().flat_map(move |ip| {
         let ports = Arc::clone(&ports); // Clone `ports` Arc for the closure
         let ports_clone = Arc::clone(&ports); // Clone `Arc` outside the closure
-        ports_clone.iter().map(move |port| (ip.clone(), *port)).collect::<Vec<_>>().into_iter()
+        ports_clone
+            .iter()
+            .map(move |port| (ip.clone(), *port))
+            .collect::<Vec<_>>()
+            .into_iter()
     });
     let chunks = addr_iter.chunks(chunk_size);
 
@@ -97,7 +225,7 @@ let addr_data_list = Arc::new(addr_data_list); // Wrap final list in Arc for sha
                     info: AddrType::IPv4,
                     socket_type: AddrType::TCP,
                     address,
-                    port: port,
+                    port,
                 };
                 process_address(addr_data).await;
                 // Permit automatically released when scope ends
@@ -109,121 +237,55 @@ let addr_data_list = Arc::new(addr_data_list); // Wrap final list in Arc for sha
     // Wait for all tasks to complete
     futures::future::join_all(tasks).await;
 
-    let ip_type_text = match addr_data_list[0].info {
-         AddrType::IPv4 => "It's IPv4 Okay!?",
-         AddrType::IPv6 => "WHY ARE YOU USING IPv6??",
-         _ => "ITS NOT VALID!!!",
-     };
-    let ip_socket_text = match addr_data_list[0].socket_type {
-         AddrType::TCP => "TCP.",
-         AddrType::UDP => "UDP.",
-         _ => "ITS NOT VALID!!!",
-     }; 
-     print!("\n\nNum of cores: {}\n\n", system_thread_count);
-     println!(
-         "Address: {:?}\nPort: {:?},\nAddr Type: {}\nIP Socket Type: {}",
-         addr_data_list[0].address,  addr_data_list[0].port, ip_type_text, ip_socket_text
-     );
- 
-     // Using a helper function to construct socket_addressess
-     // use simply by socket_address[<num>] to get a valid socket IP and port.
-     let socket_address = [
-         socket_addr_create( addr_data_list[0].address,  addr_data_list[0].port),
-         socket_addr_create( addr_data_list[0].address,  addr_data_list[0].port + 1),
-     ];
- 
-     println!("Socket Addresses: {:?}", socket_address[0]);
-     println!(
-         "Is IP 0 in socket_address IPv4 using core libs?: {}",
-         socket_address[0].is_ipv4()
-     );
- 
-     // Bind the TCP listener using tokio
-     
+    // Using a helper function to construct socket_addressess
+    // use simply by socket_address[<num>] to get a valid socket IP and port.
+    let socket_address = [
+        socket_addr_create(addr_data_list[0].address, addr_data_list[0].port),
+        socket_addr_create(addr_data_list[0].address, addr_data_list[0].port + 1),
+    ];
+
+    println!("Socket Addresses: {:?}", socket_address[0]);
+    println!(
+        "Is IP 0 in socket_address IPv4 using core libs?: {}",
+        socket_address[0].is_ipv4()
+    );
+
+    // Bind the TCP listener using tokio
+
     println!("\n\nSocket is: {:?}\n\n", socket_address);
 
-     let listener = TcpListener::bind(socket_address[0]).await?;
-     println!("Listening on: {}", socket_address[0]);
-     println!("\n\nTCP listener is: {:?}\n\n", listener);
+    let manager = ListenerManager::new(addr_data_list.to_vec(), max_workers);
+    manager.run().await?;
 
-     // Accept connections in a loop
-     loop {
-         let (mut socket, addr) = listener.accept().await?;
-         println!("New connection: {:?}", addr);
- 
-         tokio::spawn(async move {
-             let mut stream_buffer = [0u8; 1024]; // Temp buffer: array of <num> bytes, feeds stream_read_data
-             let mut stream_read_data = Vec::new(); // Dynamic buffer to collect data
- 
-             loop { // Loop to read all data, iterate over it in chunks of the buffer size
-                 match socket.read(&mut stream_buffer).await {
-                     Ok(0) => {
-                         println!("Connection closed by peer: {:?}", addr);
-                         break;
-                     } // Nothing to read, nothing to do!
-                     Ok(bytes_read) => {
-                         // General INFO / DEBUG
-                         println!(
-                             "Stream Read Buffer: {:?}",
-                             &stream_buffer[..bytes_read]
-                         );
- 
-                         // Append to dynamic buffer
-                         stream_read_data.extend_from_slice(&stream_buffer[..bytes_read]);
- 
-                         // Check for termination sequence (\r\n)
-                         if stream_read_data.ends_with(&[13, 10]) {
-                             println!("RECEIVED TERMINATION SEQUENCE!");
-                             break;
-                         }
- 
-                         // Echo data back to the client
-                         if let Err(e) = socket.write_all(&stream_buffer[..bytes_read]).await {
-                             eprintln!("Failed to write back to socket: {:?}", e);
-                             break;
-                         }
-                     }
-                     Err(e) => {
-                         eprintln!("Error reading from socket: {:?}", e);
-                         break;
-                     }
-                 }
-             }
- 
-             println!(
-                 "Quantity of data read: {} bytes.",
-                 stream_read_data.len()
-             );
-             println!(
-                 "Data as text: {}",
-                 String::from_utf8_lossy(&stream_read_data)
-             );
-         });
-     }
- }
- /*
+    Ok(())
+}
+/*
  *      [   DECLERATIONS   ]
  */
- #[derive(Debug, PartialEq)]
- enum AddrType {
-     IPv4,
-     IPv6,
-     TCP,
-     UDP,
- }
- 
- #[derive(Debug)]
- struct AddrData {
-     info: AddrType,
-     socket_type: AddrType,
-     address: (u8, u8, u8, u8),
-     port: u16,
- }
 
- // FN Helper to help create socket_address
- fn socket_addr_create(address: (u8, u8, u8, u8), port: u16) -> SocketAddr {
-     SocketAddr::from((Ipv4Addr::new(address.0, address.1, address.2, address.3), port))
- }
+#[derive(Debug, PartialEq, Clone)]  // Added Clone here
+enum AddrType {
+    IPv4,
+    IPv6,
+    TCP,
+    UDP,
+}
+
+#[derive(Debug, Clone)]
+struct AddrData {
+    info: AddrType,
+    socket_type: AddrType,
+    address: (u8, u8, u8, u8),
+    port: u16,
+}
+
+// FN Helper to help create socket_address
+fn socket_addr_create(address: (u8, u8, u8, u8), port: u16) -> SocketAddr {
+    SocketAddr::from((
+        Ipv4Addr::new(address.0, address.1, address.2, address.3),
+        port,
+    ))
+}
 
 enum ChunkState {
     Idle,
@@ -235,7 +297,7 @@ enum ChunkState {
 
 struct Chunk {
     state: ChunkState,
-    data: Vec<(String,u16)>, // IP-Port pairs
+    data: Vec<(String, u16)>, // IP-Port pairs
 }
 
 struct SharedState {
@@ -245,7 +307,7 @@ struct SharedState {
     error_log: Mutex<Vec<String>>,
 }
 
- /*
+/*
  *      [   FUNCTIONS   ]
  */
 
@@ -283,7 +345,7 @@ fn get_thread_factor() -> usize {
     }
 }
 
-fn get_max_conn() -> usize{
+fn get_max_conn() -> usize {
     use std::fs;
 
     // Path to the proc file
@@ -300,9 +362,8 @@ fn get_max_conn() -> usize{
     // Adjust the result by subtracting `free_alloc`
     result.saturating_sub(free_alloc) // Ensures no underflow occur
 }
-    
+
 async fn process_address(addr_data: AddrData) {
     println!("Processing address: {:?}", addr_data);
     // Add more logic for processing as needed
 }
-
