@@ -29,12 +29,10 @@
 use std::{
     io::{self, Write},
     num::NonZeroUsize,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::Arc,
     thread::available_parallelism,
 };
-use tokio::sync::Mutex;
 
-// Import from our library
 use ipcow::{
     AddrType, 
     AddrData, 
@@ -63,11 +61,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
         })
         .collect();
-
-    println!(
-        "Configuring server with {} addresses",
-        addr_data_list.len()
-    );
 
     // Create and run the listener manager
     let manager = ListenerManager::new(addr_data_list, max_workers);
