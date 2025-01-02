@@ -47,21 +47,34 @@ use sockparse::{addr_input, parse_ip_input};
     //let max_conn = get_max_conn_count();
 
     let (ips_vec, ports_vec) = addr_input(); // Returns a tuple (Vec<Ipv4Addr>, Vec<u16>)
-    let ips = Arc::new(ips_vec); // Wrap `ips` in Arc for shared ownership
-    let ports = Arc::new(ports_vec); // Wrap `ports` in Arc for shared ownership
     let mut addr_data_list: Vec<AddrData> = Vec::new(); // vector of <enum struct>
-    // Assemble the addr list. Iterate over all IP and port combinations
-		
-    let chunk_size = (addr_data_list.len() + (max_workers -1))/max_workers; 
-    println!("ADDR DATA LEN: {:?}, Chunk Size: {:?}", addr_data_list.len(), chunk_size);
+    let ips = Arc::new(ips_vec); // Wrap `ips` in Arc for shared ownership
+let ports = Arc::new(ports_vec); // Wrap `ports` in Arc for shared ownership
 
+// Now we create addr_data_list directly:
+let addr_data_list: Vec<AddrData> = ips.iter()
+    .flat_map(|ip| {
+        ports.iter().map(move |port| AddrData {
+            info: AddrType::IPv4,
+            socket_type: AddrType::TCP,
+            address: ip.octets().into(),
+            port: *port,
+        })
+    })
+    .collect();
+
+let addr_data_list = Arc::new(addr_data_list); // Wrap final list in Arc for shared ownership
+
+    let chunk_size = ((addr_data_list.len() + (max_workers - 1)) / max_workers).max(1);
+    println!("ADDR DATA LEN: {:?}, Chunk Size: {:?}", addr_data_list.len(), chunk_size);
 
     let max_concurrent_tasks = 8; // Adjust based on available cores and workload
     let semaphore = Arc::new(Semaphore::new(max_concurrent_tasks));
 
     let addr_iter = ips.iter().flat_map(move |ip| {
         let ports = Arc::clone(&ports); // Clone `ports` Arc for the closure
-        ports.iter().map(move |port| (ip.clone(), port.clone()))
+        let ports_clone = Arc::clone(&ports); // Clone `Arc` outside the closure
+        ports_clone.iter().map(move |port| (ip.clone(), *port)).collect::<Vec<_>>().into_iter()
     });
     let chunks = addr_iter.chunks(chunk_size);
 
