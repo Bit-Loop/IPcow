@@ -1,4 +1,4 @@
-/*!
+/*
  *********************************************************
  *                     🔍 SockParse 🔍                  
  *      A lightweight Rust library for parsing user  
@@ -22,7 +22,7 @@
  use ipnetwork::Ipv4Network;
  
  /// Reads input from user with a prompt
- fn read_input(prompt: &str) -> String {
+ pub fn read_input(prompt: &str) -> String {
      let mut input = String::new();
      println!("{}", prompt);
      io::stdin()
@@ -161,4 +161,70 @@
      println!("Parsed Ports: {:?}", ports.len());
  
      (ips, ports)
+ }
+
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+     use std::net::Ipv4Addr;
+     use std::io::Cursor;
+
+     // Mock stdin for testing
+     struct StdinMock {
+         cursor: Cursor<Vec<u8>>
+     }
+
+     impl StdinMock {
+         fn new(input: &str) -> Self {
+             Self {
+                 cursor: Cursor::new(input.as_bytes().to_vec())
+             }
+         }
+     }
+
+     #[test]
+     fn test_parse_ip_input() {
+         let result = parse_ip_input("127.0.0.1");
+         assert_eq!(result.len(), 1);
+         assert_eq!(result[0], Ipv4Addr::new(127, 0, 0, 1));
+     }
+ 
+     #[test]
+     fn test_parse_ip_range() {
+         let result = parse_ip_input("127.0.0.1-127.0.0.3");
+         assert_eq!(result.len(), 3);
+         assert!(result.contains(&Ipv4Addr::new(127, 0, 0, 1)));
+         assert!(result.contains(&Ipv4Addr::new(127, 0, 0, 2)));
+         assert!(result.contains(&Ipv4Addr::new(127, 0, 0, 3)));
+     }
+ 
+     #[test]
+     fn test_parse_wildcard() {
+         let result = parse_ip_input("127.0.0.X");
+         assert!(!result.is_empty());
+         for ip in result {
+             assert_eq!(ip.octets()[0], 127);
+             assert_eq!(ip.octets()[1], 0);
+             assert_eq!(ip.octets()[2], 0);
+         }
+     }
+ 
+     #[test]
+     fn test_parse_port_input() {
+         let result = parse_port_input("9998-10000");
+         assert_eq!(result.len(), 3);
+         assert!(result.contains(&9998));
+         assert!(result.contains(&9999));
+         assert!(result.contains(&10000));
+     }
+ 
+     #[test]
+     fn test_addr_input_format() {
+         let input = "127.0.0.1\n80\n";
+         let _mock = StdinMock::new(input);  
+         
+         let (ips, ports) = addr_input();
+         assert!(!ips.is_empty(), "IP list should not be empty");
+         assert!(!ports.is_empty(), "Port list should not be empty");
+     }
  }
