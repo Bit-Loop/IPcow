@@ -87,39 +87,6 @@ A high-performance, asynchronous TCP server written in Rust, tailored for bug bo
   - [ ] UDP Performance Tests
   - [ ] Concurrency Tests
 
-## 📑 Development Roadmap
-
-### v0.1.0 - Core Foundation
-- [x] Tokio Async Runtime Integration
-- [x] Multi-Port TCP Listening
-- [x] Resource-Aware Threading
-- [x] Basic Connection Handling
-
-### v0.2.0 - Service Enhancement
-- [ ] Smart Service Discovery
-  - [ ] Port Service Identification
-  - [ ] Service Version Detection
-  - [ ] Protocol Recognition
-- [ ] Error Registry System
-  - [ ] Error Deduplication
-  - [ ] Pattern Analysis
-
-### v0.3.0 - Security Tools
-- [ ] Traffic Analysis
-  - [ ] Protocol Analysis
-  - [ ] Data Leakage Detection
-- [ ] Fuzzing Framework
-  - [ ] Protocol Fuzzing
-  - [ ] State Machine Testing
-
-### v0.4.0 - Web Interface
-- [ ] Core Web Server
-  - [ ] HTTP/HTTPS API
-  - [ ] WebSocket Support
-- [ ] Analytics Dashboard
-  - [ ] Real-time Monitoring
-  - [ ] Traffic Visualization
-
 
 ## 🏗️ Architecture
 
@@ -244,6 +211,42 @@ Contributions are welcome! To help enhance bug bounty capabilities:
 Before submitting:
 - Ensure your code passes all tests.
 - Provide detailed documentation for new features.
+
+
+## 📑 Development Roadmap
+
+### v0.1.0 - Core Foundation
+- [x] Tokio Async Runtime Integration
+- [x] Multi-Port TCP Listening
+- [x] Resource-Aware Threading
+- [x] Basic Connection Handling
+
+### v0.2.0 - Service Enhancement
+- [ ] Smart Service Discovery
+  - [ ] Port Service Identification
+  - [ ] Service Version Detection
+  - [ ] Protocol Recognition
+- [ ] Error Registry System
+  - [ ] Error Deduplication
+  - [ ] Pattern Analysis
+
+### v0.3.0 - Security Tools
+- [ ] Traffic Analysis
+  - [ ] Protocol Analysis
+  - [ ] Data Leakage Detection
+- [ ] Fuzzing Framework
+  - [ ] Protocol Fuzzing
+  - [ ] State Machine Testing
+
+### v0.4.0 - Web Interface
+- [ ] Core Web Server
+  - [ ] HTTP/HTTPS API
+  - [ ] WebSocket Support
+- [ ] Analytics Dashboard
+  - [ ] Real-time Monitoring
+  - [ ] Traffic Visualization
+
+
 
 ## 📝 License
 
