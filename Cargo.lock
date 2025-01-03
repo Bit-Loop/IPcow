@@ -1032,6 +1032,7 @@ dependencies = [
  "ipnetwork",
  "itertools",
  "serde",
+ "serde_json",
  "sysinfo",
  "tokio",
  "tokio-test",

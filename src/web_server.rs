@@ -3,6 +3,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use serde_json;
 
 // Add shared state for metrics
 #[derive(Clone)]
@@ -21,12 +22,20 @@ pub async fn run_web_server() {
     let state_clone = state.clone();
     let status = warp::path("status")
         .map(move || {
-            let conns = state_clone.connections.try_lock().unwrap_or(&mut 0);
-            let uptime = state_clone.uptime.try_lock().unwrap_or(&mut Duration::from_secs(0));
+            let connections = match state_clone.connections.try_lock() {
+                Ok(guard) => *guard,
+                Err(_) => 0,
+            };
+            
+            let uptime = match state_clone.uptime.try_lock() {
+                Ok(guard) => guard.as_secs(),
+                Err(_) => 0,
+            };
+            
             warp::reply::json(&serde_json::json!({
                 "status": "running",
-                "connections": *conns,
-                "uptime_secs": uptime.as_secs()
+                "connections": connections,
+                "uptime_secs": uptime
             }))
         });
 
