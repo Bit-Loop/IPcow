@@ -48,25 +48,6 @@ use tokio::{
 
 use sockparse::{addr_input};
 
-// Error Registry for deduplication
-#[derive(Debug, Default)]
-struct ErrorRegistry {
-    errors: HashMap<u64, String>
-}
-
-impl ErrorRegistry {
-    fn new() -> Self {
-        Self { errors: HashMap::new() }
-    }
-
-    fn register_error(&mut self, error: &str) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        error.hash(&mut hasher);
-        let id = hasher.finish();
-        self.errors.entry(id).or_insert_with(|| error.to_string());
-        id
-    }
-}
 
 pub struct ListenerManager {
     error_registry: Arc<Mutex<ErrorRegistry>>,

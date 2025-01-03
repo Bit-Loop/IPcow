@@ -81,28 +81,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
-// Keep utility functions specific to the binary
-fn get_thread_factor() -> usize {
-    let system_threads = available_parallelism()
-        .unwrap_or(NonZeroUsize::new(1).unwrap())
-        .get();
-    
-    loop {
-        print!(
-            "System Threads: {}\nEnter thread multiplier: ",
-            system_threads
-        );
-        io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        if io::stdin().read_line(&mut input).is_ok() {
-            if let Ok(factor) = input.trim().parse::<usize>() {
-                if factor > 0 {
-                    return system_threads * factor;
-                }
-            }
-        }
-        println!("Please enter a positive number");
-    }
-}

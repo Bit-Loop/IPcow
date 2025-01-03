@@ -6,7 +6,7 @@ use chrono::Local;
 use crate::core::discovery::ServiceDiscovery;
 
 pub async fn handle_connection(mut socket: TcpStream, addr: SocketAddr, discovery: Arc<ServiceDiscovery>) {
-    let mut detection_buf = [0b; 1024];
+    let mut detection_buf = [0_u8; 1024];
     let mut content = String::new();
     
     let request = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";

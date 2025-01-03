@@ -1,4 +1,6 @@
-use std::{io::{self, Write}, thread::available_parallelism, num::NonZeroUsize};
+use std::io::{self, Write};
+use std::thread::available_parallelism;
+use std::num::NonZeroUsize;
 
 pub fn get_thread_factor() -> usize {
     let system_threads = available_parallelism()

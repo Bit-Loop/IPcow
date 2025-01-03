@@ -1,32 +1,28 @@
 use std::collections::HashMap;
-use std::error::Error;
 use std::sync::{Arc, Mutex};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ErrorRegistry {
-    errors: Arc<Mutex<HashMap<String, Vec<String>>>>,
+    errors: HashMap<String, Vec<String>>,
 }
 
 impl ErrorRegistry {
     pub fn new() -> Self {
-        ErrorRegistry {
-            errors: Arc::new(Mutex::new(HashMap::new())),
+        Self {
+            errors: HashMap::new(),
         }
     }
 
-    pub fn record_error(&self, category: &str, message: String) {
-        let mut errors = self.errors.lock().unwrap();
-        errors
-            .entry(category.to_string())
+    pub fn register_error(&mut self, error: &str) -> String {
+        let error_id = format!("ERR_{}", self.errors.len());
+        self.errors
+            .entry(error_id.clone())
             .or_insert_with(Vec::new)
-            .push(message);
+            .push(error.to_string());
+        error_id
     }
 
-    pub fn get_errors(&self, category: &str) -> Vec<String> {
-        let errors = self.errors.lock().unwrap();
-        errors
-            .get(category)
-            .cloned()
-            .unwrap_or_else(Vec::new)
+    pub fn get_errors(&self, error_id: &str) -> Option<&Vec<String>> {
+        self.errors.get(error_id)
     }
 }

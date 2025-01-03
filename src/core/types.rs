@@ -1,4 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::fmt;
 
 /// Network address types supported by IPCow
 #[derive(Debug, PartialEq, Clone)]
@@ -41,27 +42,35 @@ pub struct NetworkConfig {
     pub retry_attempts: u32,
 }
 
-/// Result type for network operations
-pub type NetworkResult<T> = Result<T, NetworkError>;
-
 /// Custom error type for network operations
 #[derive(Debug)]
 pub enum NetworkError {
     ConnectionFailed(String),
-    Timeout(std::time::Duration),
-    InvalidAddress(String),
-    PortInUse(u16),
+    InvalidAddress,
+    InvalidPort,
+    Timeout,
+    IoError(std::io::Error),
 }
 
-impl std::fmt::Display for NetworkError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for NetworkError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ConnectionFailed(msg) => write!(f, "Connection failed: {}", msg),
-            Self::Timeout(duration) => write!(f, "Operation timed out after {:?}", duration),
-            Self::InvalidAddress(addr) => write!(f, "Invalid address: {}", addr),
-            Self::PortInUse(port) => write!(f, "Port {} is already in use", port),
+            NetworkError::ConnectionFailed(msg) => write!(f, "Connection failed: {}", msg),
+            NetworkError::InvalidAddress => write!(f, "Invalid address"),
+            NetworkError::InvalidPort => write!(f, "Invalid port"),
+            NetworkError::Timeout => write!(f, "Operation timed out"),
+            NetworkError::IoError(e) => write!(f, "IO error: {}", e),
         }
     }
 }
 
 impl std::error::Error for NetworkError {}
+
+impl From<std::io::Error> for NetworkError {
+    fn from(error: std::io::Error) -> Self {
+        NetworkError::IoError(error)
+    }
+}
+
+/// Result type for network operations
+pub type NetworkResult<T> = Result<T, NetworkError>;
