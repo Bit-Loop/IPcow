@@ -32,13 +32,15 @@ use std::{
     sync::Arc,
     thread::available_parallelism,
 };
-
+use tokio::sync::Semaphore;
 use ipcow::{
     AddrType, 
     AddrData, 
     ListenerManager,
     sockparse::addr_input,
 };
+
+mod web_server;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -64,7 +66,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create and run the listener manager
     let manager = ListenerManager::new(addr_data_list, max_workers);
-    manager.run().await?;
+    let manager_handle = tokio::spawn(async move {
+        manager.run().await.unwrap();
+    });
+
+    // Run the web server
+    let web_server_handle = tokio::spawn(async {
+        web_server::run_web_server().await;
+    });
+
+    // Wait for both tasks to complete
+    tokio::try_join!(manager_handle, web_server_handle)?;
 
     Ok(())
 }

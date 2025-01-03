@@ -7,6 +7,10 @@ use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use tokio::net::{TcpListener, TcpStream}; 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
+use chrono::Local; 
 
 // Export public types and functions
 pub mod sockparse;  // Move sockparse module here
@@ -41,6 +45,7 @@ pub struct ListenerManager {
     timeout_duration: Duration,
     max_retries: usize,
     retry_delay: Duration,
+    service_discovery: Arc<ServiceDiscovery>,
 }
 
 impl ErrorRegistry {
@@ -66,89 +71,59 @@ impl ListenerManager {
             timeout_duration: Duration::from_millis(100), // Reduced from 30 secs
             max_retries: 2,                               // Reduced from 3
             retry_delay: Duration::from_millis(10),       // Reduced from 1 sec
+            service_discovery: Arc::new(ServiceDiscovery::new()),
         }
     }
 
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut listener_tasks = Vec::new();
         let semaphore = Arc::new(Semaphore::new(self.max_concurrent));
-        let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
+        let (shutdown_tx, _shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
 
         for addr_data in self.addr_data.iter() {
             let permit = semaphore.clone().acquire_owned().await?;
             let error_registry = self.error_registry.clone();
             let socket_addr = socket_addr_create(addr_data.address, addr_data.port);
-            let timeout_duration = self.timeout_duration;
-            let max_retries = self.max_retries;
-            let retry_delay = self.retry_delay;
+            let discovery = self.service_discovery.clone();
             let mut shutdown_rx = shutdown_tx.subscribe();
             
             let task = tokio::spawn(async move {
-                let mut retry_count = 0;
-                
-                'connection: loop {
-                    match TcpListener::bind(&socket_addr).await {
-                        Ok(listener) => {
-                            println!("Listening on: {}", socket_addr);
-                            
-                            loop {
-                                tokio::select! {
-                                    accept_result = tokio::time::timeout(timeout_duration, listener.accept()) => {
-                                        match accept_result {
-                                            Ok(Ok((socket, addr))) => {
-                                                retry_count = 0; // Reset on successful connection
-                                                tokio::spawn(async move {
-                                                    if let Err(e) = socket.set_nodelay(true) {
-                                                        eprintln!("Failed to set TCP_NODELAY: {}", e);
-                                                    }
-                                                    handle_connection(socket, addr).await;
-                                                });
-                                            }
-                                            Ok(Err(e)) => {
-                                                let mut registry = error_registry.lock().await;
-                                                let error_id = registry.register_error(&e.to_string());
-                                                eprintln!("Accept error on {}: ID {}: {}", socket_addr, error_id, e);
-                                                
-                                                if retry_count >= max_retries {
-                                                    eprintln!("Max retries reached for {}", socket_addr);
-                                                    break 'connection;
-                                                }
-                                                retry_count += 1;
-                                                tokio::time::sleep(retry_delay).await;
-                                            }
-                                            Err(_) => {
-                                                let mut registry = error_registry.lock().await;
-                                                let error_id = registry.register_error("Connection timeout");
-                                                eprintln!("Timeout on {}: ID {}", socket_addr, error_id);
-                                                
-                                                if retry_count >= max_retries {
-                                                    eprintln!("Max retries reached for {}", socket_addr);
-                                                    break 'connection;
-                                                }
-                                                retry_count += 1;
-                                                tokio::time::sleep(retry_delay).await;
-                                            }
+                match TcpListener::bind(&socket_addr).await {
+                    Ok(listener) => {
+                        println!("Listening on: {}", socket_addr);
+                        
+                        loop {
+                            tokio::select! {
+                                accept_result = tokio::time::timeout(
+                                    Duration::from_secs(120), 
+                                    listener.accept()
+                                ) => {
+                                    match accept_result {
+                                        Ok(Ok((socket, addr))) => {
+                                            let discovery = discovery.clone();
+                                            tokio::spawn(async move {
+                                                handle_connection(socket, addr, discovery).await;
+                                            });
+                                        }
+                                        Ok(Err(e)) => {
+                                            eprintln!("Accept error: {}", e);
+                                        }
+                                        Err(_) => {
+                                            eprintln!("Connection timed out");
                                         }
                                     }
-                                    _ = shutdown_rx.recv() => {
-                                        println!("Shutdown signal received for {}", socket_addr);
-                                        break 'connection;
-                                    }
+                                }
+                                _ = shutdown_rx.recv() => {
+                                    println!("Shutting down listener for {}", socket_addr);
+                                    break;
                                 }
                             }
                         }
-                        Err(e) => {
-                            let mut registry = error_registry.lock().await;
-                            let error_id = registry.register_error(&e.to_string());
-                            eprintln!("Bind error on {}: ID {}: {}", socket_addr, error_id, e);
-                            
-                            if retry_count >= max_retries {
-                                eprintln!("Max retries reached for {}", socket_addr);
-                                break;
-                            }
-                            retry_count += 1;
-                            tokio::time::sleep(retry_delay).await;
-                        }
+                    }
+                    Err(e) => {
+                        let mut registry = error_registry.lock().await;
+                        let error_id = registry.register_error(&e.to_string());
+                        eprintln!("Bind error on {}: ID {}: {}", socket_addr, error_id, e);
                     }
                 }
                 drop(permit);
@@ -162,21 +137,36 @@ impl ListenerManager {
     }
 }
 
-async fn handle_connection(mut socket: TcpStream, addr: SocketAddr) {
-    if let Err(e) = socket.set_nodelay(true) {
-        eprintln!("Failed to set TCP_NODELAY: {}", e);
-    }
-    let mut stream_buffer = [0u8; 8192];  // Increased buffer size
+async fn handle_connection(mut socket: TcpStream, addr: SocketAddr, discovery: Arc<ServiceDiscovery>) {
+    // Try to detect if peer is serving content
+    let mut detection_buf = [0u8; 1024];
+    let mut content = String::new();
     
-    while let Ok(n) = socket.read(&mut stream_buffer).await {
-        if n == 0 || stream_buffer[..n].ends_with(&[13, 10]) {
-            break;
-        }
-        if let Err(e) = socket.write_all(&stream_buffer[..n]).await {
-            eprintln!("Failed to write to socket: {}", e);
-            break;
+    // Send HTTP GET request
+    let request = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    if socket.write_all(request.as_bytes()).await.is_ok() {
+        if let Ok(n) = socket.read(&mut detection_buf).await {
+            if n > 0 {
+                content = String::from_utf8_lossy(&detection_buf[..n]).to_string();
+                discovery.record_service(addr, &content).await;
+            }
         }
     }
+
+    // Now serve our own content
+    let response = format!(
+        "HTTP/1.1 200 OK\r\n\
+         Content-Type: text/html\r\n\
+         \r\n\
+         <html><body>\
+         <h1>Port {}</h1>\
+         <p>Active since: {}</p>\
+         </body></html>",
+        addr.port(),
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+    );
+
+    let _ = socket.write_all(response.as_bytes()).await;
 }
 
 // Helper functions
@@ -185,4 +175,33 @@ pub fn socket_addr_create(address: (u8, u8, u8, u8), port: u16) -> SocketAddr {
         Ipv4Addr::new(address.0, address.1, address.2, address.3),
         port,
     ))
+}
+
+#[derive(Debug)]
+pub struct ServiceDiscovery {
+    log_file: PathBuf,
+    discoveries: Arc<Mutex<HashMap<SocketAddr, String>>>,
+}
+
+impl ServiceDiscovery {
+    pub fn new() -> Self {
+        Self {
+            log_file: PathBuf::from("discovered_services.txt"),
+            discoveries: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub async fn record_service(&self, addr: SocketAddr, content: &str) {
+        let mut discoveries = self.discoveries.lock().await;
+        discoveries.insert(addr, content.to_string());
+        
+        // Write to file
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.log_file) 
+        {
+            let _ = writeln!(file, "{}: {}", addr, content);
+        }
+    }
 }
