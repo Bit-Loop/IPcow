@@ -80,8 +80,8 @@ A high-performance, asynchronous TCP server written in Rust, tailored for bug bo
   - [ ] Resource Usage Stats
 
 ### Testing Infrastructure
-- [-] Network Test Suite
-- [-] System Load Tests
+- [ ] Network Test Suite
+- [ ] System Load Tests
 - [ ] Benchmark Suite
   - [ ] TCP Performance Tests
   - [ ] UDP Performance Tests
