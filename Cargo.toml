@@ -17,12 +17,14 @@ ipnetwork = "*"
 itertools = "*"
 futures = "*"
 serde = { version = "1.0", features = ["derive"] }
+sysinfo = "*"
 
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
 tokio-test = "*"
 async-std = { version = "1.0", features = ["attributes"] }
+sysinfo = "*"
 
 [[bench]]
 name = "port_scanner_bench"

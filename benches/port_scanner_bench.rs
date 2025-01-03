@@ -18,7 +18,6 @@ async fn benchmark_connection_setup(ports: usize) -> BenchMetrics {
     let mut metrics = BenchMetrics::default();
     let start = std::time::Instant::now();
 
-    // Create test address data
     let addr_data: Vec<AddrData> = (8000..8000+ports)
         .map(|port| AddrData {
             info: AddrType::IPv4,
@@ -28,25 +27,23 @@ async fn benchmark_connection_setup(ports: usize) -> BenchMetrics {
         })
         .collect();
 
-    let _manager = ListenerManager::new(addr_data, ports);
-    metrics.setup_time = start.elapsed();
-    // Wait for listeners to be ready
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    // Benchmark connection handling
+    let manager = ListenerManager::new(addr_data, ports.min(100));  // Cap concurrent connections
+    
+    // Spawn manager in background
+    let manager_handle = tokio::spawn(async move {
+        manager.run().await.unwrap();
+    });
+
+    // Quick connection test
     let connection_start = std::time::Instant::now();
-    let max_concurrent = 100;
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent));
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(100));
     
     let mut handles = Vec::new();
     for port in 8000..8000+ports {
         let permit = semaphore.clone().acquire_owned().await.unwrap();
         handles.push(tokio::spawn(async move {
-            let addr = format!("127.0.0.1:{}", port);
-            if let Ok(mut stream) = TcpStream::connect(&addr).await {
-                let data = b"TEST DATA\r\n";
-                if let Err(e) = stream.write_all(data).await {
-                    eprintln!("Write error on {}: {}", addr, e);
-                }
+            if let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{}", port)).await {
+                stream.write_all(b"TEST\r\n").await.unwrap_or_default();
             }
             drop(permit);
         }));
@@ -54,10 +51,10 @@ async fn benchmark_connection_setup(ports: usize) -> BenchMetrics {
 
     join_all(handles).await;
     metrics.connection_times.push(connection_start.elapsed());
+    manager_handle.abort();
     
-    // Calculate throughput
-    let total_time = metrics.connection_times.iter().sum::<Duration>();
-    metrics.throughput = ports as f64 / total_time.as_secs_f64();
+    metrics.setup_time = start.elapsed();
+    metrics.throughput = ports as f64 / metrics.connection_times[0].as_secs_f64();
     
     metrics
 }

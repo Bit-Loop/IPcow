@@ -63,16 +63,16 @@ impl ListenerManager {
             error_registry: Arc::new(Mutex::new(ErrorRegistry::new())),
             addr_data: Arc::new(addr_data),
             max_concurrent,
-            timeout_duration: Duration::from_secs(30),
-            max_retries: 3,
-            retry_delay: Duration::from_secs(1),
+            timeout_duration: Duration::from_millis(100), // Reduced from 30 secs
+            max_retries: 2,                               // Reduced from 3
+            retry_delay: Duration::from_millis(10),       // Reduced from 1 sec
         }
     }
 
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut listener_tasks = Vec::new();
         let semaphore = Arc::new(Semaphore::new(self.max_concurrent));
-        let (shutdown_tx, _shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);  // Specify type parameter
+        let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
         for addr_data in self.addr_data.iter() {
             let permit = semaphore.clone().acquire_owned().await?;
@@ -82,7 +82,7 @@ impl ListenerManager {
             let max_retries = self.max_retries;
             let retry_delay = self.retry_delay;
             let mut shutdown_rx = shutdown_tx.subscribe();
-
+            
             let task = tokio::spawn(async move {
                 let mut retry_count = 0;
                 
@@ -95,19 +95,22 @@ impl ListenerManager {
                                 tokio::select! {
                                     accept_result = tokio::time::timeout(timeout_duration, listener.accept()) => {
                                         match accept_result {
-                                            Ok(Ok((mut socket, addr))) => {
+                                            Ok(Ok((socket, addr))) => {
                                                 retry_count = 0; // Reset on successful connection
                                                 tokio::spawn(async move {
+                                                    if let Err(e) = socket.set_nodelay(true) {
+                                                        eprintln!("Failed to set TCP_NODELAY: {}", e);
+                                                    }
                                                     handle_connection(socket, addr).await;
                                                 });
                                             }
                                             Ok(Err(e)) => {
                                                 let mut registry = error_registry.lock().await;
                                                 let error_id = registry.register_error(&e.to_string());
-                                                println!("Accept error on {}: ID {}", socket_addr, error_id);
+                                                eprintln!("Accept error on {}: ID {}: {}", socket_addr, error_id, e);
                                                 
                                                 if retry_count >= max_retries {
-                                                    println!("Max retries reached for {}", socket_addr);
+                                                    eprintln!("Max retries reached for {}", socket_addr);
                                                     break 'connection;
                                                 }
                                                 retry_count += 1;
@@ -116,10 +119,10 @@ impl ListenerManager {
                                             Err(_) => {
                                                 let mut registry = error_registry.lock().await;
                                                 let error_id = registry.register_error("Connection timeout");
-                                                println!("Timeout on {}: ID {}", socket_addr, error_id);
+                                                eprintln!("Timeout on {}: ID {}", socket_addr, error_id);
                                                 
                                                 if retry_count >= max_retries {
-                                                    println!("Max retries reached for {}", socket_addr);
+                                                    eprintln!("Max retries reached for {}", socket_addr);
                                                     break 'connection;
                                                 }
                                                 retry_count += 1;
@@ -137,8 +140,14 @@ impl ListenerManager {
                         Err(e) => {
                             let mut registry = error_registry.lock().await;
                             let error_id = registry.register_error(&e.to_string());
-                            println!("Bind error on {}: ID {}", socket_addr, error_id);
-                            break;
+                            eprintln!("Bind error on {}: ID {}: {}", socket_addr, error_id, e);
+                            
+                            if retry_count >= max_retries {
+                                eprintln!("Max retries reached for {}", socket_addr);
+                                break;
+                            }
+                            retry_count += 1;
+                            tokio::time::sleep(retry_delay).await;
                         }
                     }
                 }
@@ -154,31 +163,18 @@ impl ListenerManager {
 }
 
 async fn handle_connection(mut socket: TcpStream, addr: SocketAddr) {
-    let mut stream_buffer = [0u8; 1024];
-    let mut stream_read_data = Vec::new();
+    if let Err(e) = socket.set_nodelay(true) {
+        eprintln!("Failed to set TCP_NODELAY: {}", e);
+    }
+    let mut stream_buffer = [0u8; 8192];  // Increased buffer size
     
-    loop {
-        match socket.read(&mut stream_buffer).await {
-            Ok(0) => {
-                println!("Connection closed by peer: {:?}", addr);
-                break;
-            }
-            Ok(bytes_read) => {
-                println!("Stream Read Buffer: {:?}", &stream_buffer[..bytes_read]);
-                stream_read_data.extend_from_slice(&stream_buffer[..bytes_read]);
-                if stream_read_data.ends_with(&[13, 10]) {
-                    println!("RECEIVED TERMINATION SEQUENCE!");
-                    break;
-                }
-                if let Err(e) = socket.write_all(&stream_buffer[..bytes_read]).await {
-                    eprintln!("Failed to write to socket: {:?}", e);
-                    break;
-                }
-            }
-            Err(e) => {
-                eprintln!("Error reading from socket: {:?}", e);
-                break;
-            }
+    while let Ok(n) = socket.read(&mut stream_buffer).await {
+        if n == 0 || stream_buffer[..n].ends_with(&[13, 10]) {
+            break;
+        }
+        if let Err(e) = socket.write_all(&stream_buffer[..n]).await {
+            eprintln!("Failed to write to socket: {}", e);
+            break;
         }
     }
 }
