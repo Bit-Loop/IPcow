@@ -37,15 +37,16 @@ use ipcow::{
     AddrType, 
     AddrData, 
     ListenerManager,
-    sockparse::addr_input,
+    core::{error::ErrorRegistry, sockparse::addr_input},
+    utils::helpers::get_thread_factor,
 };
-
-mod web_server;
+use ipcow::modules::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let error_registry = ErrorRegistry::new();
     let max_workers = get_thread_factor();
-    
+    ping::ping(); 
     // Get IP and port configurations
     let (ips_vec, ports_vec) = addr_input();
     let ips: Arc<Vec<_>> = Arc::new(ips_vec);
