@@ -1,4 +1,4 @@
-# 🐮 IPCow [WIP]
+# 🐮 IPCow [WIP/Todo-List]
 
 A high-performance, asynchronous TCP server written in Rust, tailored for bug bounty and penetration testing. IPCow supports multi-port listening, service discovery, and concurrent connection handling with advanced traffic analysis capabilities.
 
