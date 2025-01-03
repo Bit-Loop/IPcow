@@ -157,7 +157,7 @@ IPCow is optimized for scenarios requiring high concurrency and minimal latency:
 - **Minimal Latency**: Maintains quick response times even under heavy load.
 - **Resource Efficiency**: Adjusts dynamically based on hardware capabilities.
 
-### Benchmark Results:
+### Benchmark Results*:
 
 | Configuration      | Average Latency |
 |---------------------|-----------------|
