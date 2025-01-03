@@ -73,7 +73,7 @@ A high-performance, asynchronous TCP server written in Rust, tailored for bug bo
 
 ### Performance Features
 - [x] High Concurrency Support
-- [-] Resource-Aware Scaling
+- [ ] Resource-Aware Scaling
 - [ ] Performance Monitoring
   - [ ] Latency Tracking
   - [ ] Connection Metrics
@@ -93,7 +93,7 @@ A high-performance, asynchronous TCP server written in Rust, tailored for bug bo
 - [x] Tokio Async Runtime Integration
 - [x] Multi-Port TCP Listening
 - [x] Resource-Aware Threading
-- [-] Basic Connection Handling
+- [x] Basic Connection Handling
 
 ### v0.2.0 - Service Enhancement
 - [ ] Smart Service Discovery
