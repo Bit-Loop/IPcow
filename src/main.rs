@@ -46,7 +46,6 @@ use ipcow::modules::*;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let error_registry = ErrorRegistry::new();
     let max_workers = get_thread_factor();
-    ping::ping(); 
     // Get IP and port configurations
     let (ips_vec, ports_vec) = addr_input();
     let ips: Arc<Vec<_>> = Arc::new(ips_vec);
