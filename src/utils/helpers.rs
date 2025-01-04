@@ -188,21 +188,21 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
         // Improved dynamic scaling based on current CPU usage and target
         next_workers = if result.cpu_usage < target_cpu {
             let scale = if distance_factor > 0.8 {
-                4.0  // Very far from target (< 20% of target)
+                5.0  // Very far from target (< 20% of target)
             } else if distance_factor > 0.6 {
-                3.0  // Far from target (20-40% of target)
+                4.0  // Far from target (20-40% of target)
             } else if distance_factor > 0.4 {
-                2.0  // Moderate distance (40-60% of target)
+                3.0  // Moderate distance (40-60% of target)
             } else if distance_factor > 0.2 {
-                1.5  // Getting closer (60-80% of target)
+                2.0  // Getting closer (60-80% of target)
             } else {
-                1.2  // Close to target (80-100% of target)
+                1.5  // Close to target (80-100% of target)
             };
             
             (workers as f32 * scale) as usize
         } else {
             // Fine-tuning when we're above target
-            (workers as f32 * 0.9) as usize
+            (workers as f32 * 0.8) as usize
         };
 
         println!(
@@ -234,13 +234,13 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
 
         // Prevent getting stuck
         if next_workers == workers {
-            next_workers = workers + (workers / 3);
-            println!("► Breaking plateau - increasing workers by 33%");
+            next_workers = workers + (workers / 2);
+            println!("► Breaking plateau - increasing workers by 50%");
         }
 
         next_workers = next_workers.min(max);
         last_cpu = result.cpu_usage;
-        thread::sleep(Duration::from_millis(5));
+        thread::sleep(Duration::from_millis(1));
     }
 
     // Rapid fine-tune phase
@@ -255,9 +255,9 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
 
         // Fine-tuning adjustments
         next_workers = if result.cpu_usage < target_cpu {
-            workers + 2
+            workers + 1
         } else {
-            workers - 2
+            workers - 1
         };
 
         println!(
@@ -287,7 +287,7 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
 
         next_workers = next_workers.min(max);
         last_cpu = result.cpu_usage;
-        thread::sleep(Duration::from_millis(5));
+        thread::sleep(Duration::from_millis(1));
     }
 
     let metrics = SystemMetrics {
@@ -313,7 +313,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
 
     // Warm-up phase
     system.refresh_all();
-    thread::sleep(Duration::from_millis(100)); // Reduced warm-up time
+    thread::sleep(Duration::from_millis(50)); // Reduced warm-up time
     system.refresh_cpu_all();
 
     // Count main workers
@@ -328,7 +328,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
         
         // Initial warm-up sample
         local_system.refresh_cpu_all();
-        thread::sleep(Duration::from_millis(50));
+        thread::sleep(Duration::from_millis(25));
         
         while start.elapsed() < Duration::from_secs(1) { // Reduced from 2s to 1s
             local_system.refresh_cpu_all();
@@ -339,7 +339,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
                     usage,
                 });
             }
-            thread::sleep(Duration::from_millis(10)); // Reduced from 50ms to 10ms
+            thread::sleep(Duration::from_millis(5)); // Reduced from 50ms to 5ms
         }
     });
 
@@ -414,7 +414,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
                                     }
                                 }
                             }
-                            tokio::time::sleep(Duration::from_millis(5)).await; // Reduced sleep time
+                            tokio::time::sleep(Duration::from_millis(1)).await; // Reduced sleep time
                         }
                     }
                     drop(server);
