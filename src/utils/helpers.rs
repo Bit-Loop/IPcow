@@ -526,17 +526,14 @@ fn calculate_efficiency_score(result: &BenchmarkResult, workers: usize) -> f64 {
     };
 
     // Throughput efficiency (workers vs CPU usage ratio)
-    let throughput_score = {
-        let cpu_per_worker = cpu_tracker.rolling_avg / workers as f32;
-        if cpu_per_worker > 2.0 { 0.3 } // Too few workers
-        else if cpu_per_worker > 1.0 { 0.6 }
-        else if cpu_per_worker > 0.5 { 1.0 } // Optimal ratio
-        else if cpu_per_worker > 0.2 { 0.7 }
-        else { 0.4 } // Too many workers
-    };
+    let throughput_score = result.io_throughput / workers as f64;
+
+    // Latency penalty
+    let latency_penalty = 1.0 / (1.0 + result.latency.as_secs_f64());
 
     // Weighted combination of scores
-    (cpu_score * 0.5 + stability_score * 0.3 + throughput_score * 0.2)
+    let final_score = (cpu_score * 0.4 + stability_score * 0.3 + throughput_score * 0.2 + latency_penalty * 0.1);
+    final_score
 }
 
 /// Calculate optimal workers based on benchmark results and system capabilities
