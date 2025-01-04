@@ -1,5 +1,5 @@
-use sysinfo::{Cpu, System, CpuRefreshKind, RefreshKind};
-use std::{thread, sync::Arc};
+use sysinfo::{System, RefreshKind};
+use std::{thread};
 use std::time::Duration;
 use tokio::runtime::Runtime;
 use ipcow::{

@@ -1,5 +1,5 @@
 use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt};
 use std::time::Duration;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -20,8 +20,8 @@ async fn test_network_throughput() {
     let start_time = std::time::Instant::now();
 
     // Test connection handling
-    let handle1 = spawn_listener(listener1, Arc::clone(&total_bytes));
-    let handle2 = spawn_listener(listener2, Arc::clone(&total_bytes));
+    let _handle1 = spawn_listener(listener1, Arc::clone(&total_bytes));
+    let _handle2 = spawn_listener(listener2, Arc::clone(&total_bytes));
 
     tokio::time::sleep(Duration::from_secs(TEST_DURATION)).await;
 

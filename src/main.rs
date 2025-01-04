@@ -17,15 +17,17 @@
  *  [Note: This is a work-in-progress project.]
  *      You can do basic testing with:
  *          cargo test --test system_tests
-*           cargo test --test network_tests
-            Althogh, the tests are not fully implemented yet and are rather basic as a place holder.
+ *           cargo test --test network_tests
+ *           Althogh, the tests are not fully implemented yet and are rather basic as a place holder.
  *
  * 🚀 Version**:       0.1.0
-* 🛠️  Created-**:      December 12, 2024  
+ * 🛠️  Created-**:      December 12, 2024  
  * 🔄 Last Update**:   Jan 3, 2025  
  * 🧑‍💻 Author:          Isaiah Tyler Jackson  
  *********************************************************************
  */
+
+// Import required dependencies for network and concurrency handling
 use std::sync::Arc;
 use ipcow::{
     AddrType, 
@@ -36,29 +38,36 @@ use ipcow::{
 };
 use ipcow::modules::*;
 
+/// Main entry point for the IPCow server
+/// Initializes networking components and starts the listener manager
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Calculate optimal number of worker threads based on system capabilities
     let max_workers = get_thread_factor();
-    // Get IP and port configurations
+
+    // Get user-configured IP addresses and ports for listening
     let (ips_vec, ports_vec) = addr_input();
+    // Wrap vectors in Arc for thread-safe sharing
     let ips: Arc<Vec<_>> = Arc::new(ips_vec);
     let ports: Arc<Vec<_>> = Arc::new(ports_vec);
 
-    // Create address data list
+    // Generate all possible IP:Port combinations for listening
+    // Creates a flat list of address configurations for the server
     let addr_data_list: Vec<AddrData> = ips
         .iter()
         .flat_map(|ip| {
             ports.iter().map(move |port| AddrData {
-                info: AddrType::IPv4,
-                socket_type: AddrType::TCP,
-                address: ip.octets().into(),
-                port: *port,
+                info: AddrType::IPv4,          // IPv4 address type
+                socket_type: AddrType::TCP,    // TCP socket type
+                address: ip.octets().into(),   // Convert IP to tuple
+                port: *port,                   // Assign port number
             })
         })
         .collect();
 
-    // Create and run the listener manager
+    // Initialize the main listener manager with configurations
     let manager = ListenerManager::new(addr_data_list, max_workers);
+    // Spawn the manager in a separate task for concurrent operation
     let manager_handle = tokio::spawn(async move {
         manager.run().await.unwrap();
     });

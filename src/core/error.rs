@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+
 
 #[derive(Debug, Default)]
 pub struct ErrorRegistry {
