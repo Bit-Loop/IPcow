@@ -4,7 +4,6 @@ use std::thread::{self, available_parallelism};
 use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 use sysinfo::{System, CpuRefreshKind, RefreshKind};
-use rayon::prelude::*;
 use std::sync::Mutex;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -20,6 +19,8 @@ struct BenchmarkResult {
     io_throughput: f64,
     latency: Duration,
     cpu_tracker: Option<CpuTracker>,
+    total_tasks: u64,      // Add total tasks counter
+    total_threads: u64,    // Add total threads counter
 }
 
 #[derive(Debug)]
@@ -29,6 +30,8 @@ struct SystemMetrics {
     total_workers: usize,
     memory_usage_mb: f64,
     benchmark_duration: Duration,
+    total_tasks: u64,      // Add total tasks counter
+    total_threads: u64,    // Add total threads counter
 }
 
 #[derive(Debug)]
@@ -91,7 +94,7 @@ pub fn get_thread_factor() -> usize {
     system.refresh_all();
 
     let base_workers = system_threads;
-    let max_workers = base_workers * 16; // Increased max multiplier
+    let max_workers = base_workers * 32; // Doubled from 16 to allow more headroom
     
     let (optimal, metrics) = find_optimal_workers(&mut system, base_workers, max_workers);
     
@@ -101,6 +104,8 @@ pub fn get_thread_factor() -> usize {
     println!("System Threads: {}", system_threads);
     println!("Optimal Workers: {}", optimal);
     println!("Total Workers Tested: {}", metrics.total_workers);
+    println!("Total Tasks Run: {}", metrics.total_tasks);
+    println!("Total Threads Created: {}", metrics.total_threads);
     println!("Memory Usage: {:.1} MB", metrics.memory_usage_mb);
     println!("Benchmark Duration: {:?}", metrics.benchmark_duration);
     println!("===============================\n");
@@ -147,57 +152,94 @@ fn calculate_max_safe_threads(sys: &System) -> usize {
 fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize, SystemMetrics) {
     let mut best_workers = base;
     let mut best_score = 0.0;
+    let mut optimal_cpu = 0.0;
     let start_time = Instant::now();
     let mut max_cpu: f32 = 0.0;
     let mut total_tested = 0;
     let mut last_cpu = 0.0;
+    let mut plateau_counter = 0;
+    let target_cpu = 92.0;
+    let mut total_tasks = 0;
+    let mut total_threads = 0;
+    let mut last_improvement = Instant::now();
     
-    let phase = "Ramp";
-    
-    print!("\x1B[2J\x1B[1;1H");
     println!("=== Worker Optimization in Progress ===\n");
+    println!("Target CPU Utilization: {:.1}%\n", target_cpu);
     
-    let mut workers = base;
-    while workers <= max {
-        print!("\x1B[2K");
-        println!("\rPhase: {} | Workers: {} | Calculating...", phase, workers);
-        
+    let mut next_workers = base;
+    
+    // Initial warm-up
+    system.refresh_all();
+    thread::sleep(Duration::from_millis(100));
+    
+    while next_workers <= max && start_time.elapsed() < Duration::from_secs(30) {
+        let workers = next_workers;
         let result = run_benchmark(workers, system);
+        
+        total_tasks += result.total_tasks;
+        total_threads += result.total_threads;
         max_cpu = max_cpu.max(result.cpu_usage);
         total_tested += 1;
-        
-        print!("\x1B[1A\x1B[2K");
-        println!(
-            "\r{} | Workers: {} | CPU: {:.1}% | Peak: {:.1}% | Score: {:.2}",
-            phase, workers, result.cpu_usage, max_cpu,
-            calculate_efficiency_score(&result, workers)
-        );
-        
-        let score = calculate_efficiency_score(&result, workers);
-        if score > best_score {
-            best_score = score;
-            best_workers = workers;
-            println!("► New best configuration found!");
-        }
 
-        if result.cpu_usage >= 65.0 {
-            // Reduce worker count before fine tuning
-            workers = (workers as f32 * 0.7) as usize;
-            println!("► Starting fine-tune phase from {} workers", workers);
-            break;
-        }
+        // Calculate scaling factors
+        let cpu_percentage = (result.cpu_usage / target_cpu) * 100.0;
+        let distance_factor = ((target_cpu - result.cpu_usage) / target_cpu).max(0.1);
         
-        workers = if result.cpu_usage < 30.0 {
-            (workers as f32 * 1.5) as usize // More gradual scaling
-        } else if result.cpu_usage < 50.0 {
-            (workers as f32 * 1.3) as usize
+        // Improved dynamic scaling based on current CPU usage and target
+        next_workers = if result.cpu_usage < target_cpu {
+            let scale = if distance_factor > 0.8 {
+                4.0  // Very far from target (< 20% of target)
+            } else if distance_factor > 0.6 {
+                3.0  // Far from target (20-40% of target)
+            } else if distance_factor > 0.4 {
+                2.0  // Moderate distance (40-60% of target)
+            } else if distance_factor > 0.2 {
+                1.5  // Getting closer (60-80% of target)
+            } else {
+                1.2  // Close to target (80-100% of target)
+            };
+            
+            (workers as f32 * scale) as usize
         } else {
-            (workers as f32 * 1.2) as usize
+            // Fine-tuning when we're above target
+            (workers as f32 * 0.9) as usize
         };
 
-        workers = workers.min(max);
-        thread::sleep(Duration::from_millis(250)); // Increased stabilization time
+        println!(
+            "{} | Workers: {} | CPU: {:.1}% | Target: {:.1}% | Progress: {:.1}% | Scale: {:.1}x",
+            if cpu_percentage < 90.0 { "Ramp" } else { "Fine-Tune" },
+            workers,
+            result.cpu_usage,
+            target_cpu,
+            cpu_percentage,
+            (next_workers as f32 / workers as f32)
+        );
+
+        let score = calculate_efficiency_score(&result, workers);
+        if score > best_score || 
+           (score >= best_score && result.cpu_usage > optimal_cpu) {
+            best_score = score;
+            best_workers = workers;
+            optimal_cpu = result.cpu_usage;
+            last_improvement = Instant::now();
+            println!("► New best configuration found! Workers: {} | CPU: {:.1}%", best_workers, optimal_cpu);
+        }
+
+        // Break conditions
+        if result.cpu_usage >= target_cpu || 
+           (last_improvement.elapsed() > Duration::from_secs(5) && total_tested > 4) {
+            println!("► Optimization complete: target reached or no improvement for 5 seconds");
+            break;
+        }
+
+        // Prevent getting stuck
+        if next_workers == workers {
+            next_workers = workers + (workers / 3);
+            println!("► Breaking plateau - increasing workers by 33%");
+        }
+
         last_cpu = result.cpu_usage;
+        thread::sleep(Duration::from_millis(10));
     }
 
     let metrics = SystemMetrics {
@@ -206,6 +248,8 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
         total_workers: total_tested,
         memory_usage_mb: system.used_memory() as f64 / 1024.0 / 1024.0,
         benchmark_duration: start_time.elapsed(),
+        total_tasks,
+        total_threads,
     };
 
     (best_workers, metrics)
@@ -214,21 +258,31 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
 fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
     let start = Instant::now();
     let ops_counter = Arc::new(AtomicU64::new(0));
-    let cpu_samples = Arc::new(Mutex::new(Vec::new()));
+    let task_counter = Arc::new(AtomicU64::new(0));
+    let thread_counter = Arc::new(AtomicU64::new(0));
+    let cpu_samples = Arc::new(Mutex::new(Vec::<CpuSample>::new()));
     let mut cpu_tracker = CpuTracker::new();
+
+    // Warm-up phase
+    system.refresh_all();
+    thread::sleep(Duration::from_millis(250)); // Reduced warm-up time
+    system.refresh_cpu_all();
+
+    // Count main workers
+    thread_counter.fetch_add(workers as u64, Ordering::SeqCst);
     
-    // Get initial CPU usage
-    system.refresh_cpu_usage();
-    let initial_cpu = system.global_cpu_usage();
-    thread::sleep(Duration::from_millis(100));
-    
-    // CPU sampling thread with improved measurement
+    // CPU sampling setup
     let samples = Arc::clone(&cpu_samples);
     let sampler = thread::spawn(move || {
         let mut local_system = System::new_with_specifics(
             RefreshKind::default().with_cpu(CpuRefreshKind::everything())
         );
-        while start.elapsed() < Duration::from_secs(4) {
+        
+        // Initial warm-up sample
+        local_system.refresh_cpu_all();
+        thread::sleep(Duration::from_millis(100));
+        
+        while start.elapsed() < Duration::from_secs(1) { // Reduced from 2s to 1s
             local_system.refresh_cpu_all();
             let usage = local_system.global_cpu_usage();
             if !usage.is_nan() && usage > 0.0 {
@@ -237,18 +291,95 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
                     usage,
                 });
             }
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(25)); // Reduced from 50ms to 25ms
         }
     });
 
-    // Spawn worker threads that simulate actual server workload
+    // Spawn worker threads
     let handles: Vec<_> = (0..workers)
-        .map(|_| spawn_realistic_worker_thread(&ops_counter))
+        .map(|_| {
+            let ops = Arc::clone(&ops_counter);
+            let tasks = Arc::clone(&task_counter);
+            let threads = Arc::clone(&thread_counter);
+            
+            thread::spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+
+                runtime.block_on(async {
+                    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                    let addr = listener.local_addr().unwrap();
+                    
+                    // Server task counter
+                    let server_tasks = Arc::clone(&tasks);
+                    
+                    let server = tokio::spawn(async move {
+                        while let Ok((mut socket, _)) = listener.accept().await {
+                            server_tasks.fetch_add(1, Ordering::SeqCst);
+                            
+                            let handler_tasks = Arc::clone(&server_tasks);
+                            tokio::spawn(async move {
+                                let mut buf = vec![0; 4096];
+                                loop {
+                                    match socket.read(&mut buf).await {
+                                        Ok(0) => break,
+                                        Ok(n) => {
+                                            if let Ok(request) = String::from_utf8(buf[..n].to_vec()) {
+                                                if request.starts_with("GET") || request.starts_with("POST") {
+                                                    let response = process_mock_request(request.as_bytes());
+                                                    if socket.write_all(&response).await.is_err() {
+                                                        break;
+                                                    }
+                                                    handler_tasks.fetch_add(1, Ordering::SeqCst);
+                                                }
+                                            }
+                                        }
+                                        Err(_) => break,
+                                    }
+                                }
+                            });
+                        }
+                    });
+
+                    // Client task counter
+                    let client_tasks = Arc::clone(&tasks);
+                    
+                    while start.elapsed().as_secs() < 3 {
+                        if let Ok(mut stream) = TcpStream::connect(addr).await {
+                            client_tasks.fetch_add(1, Ordering::SeqCst);
+                            // Send HTTP GET request with headers
+                            let request = format!(
+                                "GET / HTTP/1.1\r\n\
+                                 Host: localhost\r\n\
+                                 User-Agent: IPCow-Benchmark\r\n\
+                                 Accept: */*\r\n\
+                                 Connection: keep-alive\r\n\r\n"
+                            );
+                            
+                            if stream.write_all(request.as_bytes()).await.is_ok() {
+                                let mut response = vec![0; 4096];
+                                if let Ok(n) = stream.read(&mut response).await {
+                                    if n > 0 && String::from_utf8_lossy(&response[..n]).starts_with("HTTP/1.1") {
+                                        ops.fetch_add(1, Ordering::SeqCst);
+                                    }
+                                }
+                            }
+                            tokio::time::sleep(Duration::from_millis(10)).await; // Increased sleep time
+                        }
+                    }
+                    drop(server);
+                })
+            })
+        })
         .collect();
 
+    // Wait for completion
     for handle in handles {
         handle.join().unwrap();
     }
+    sampler.join().unwrap();
 
     // Improved CPU usage calculation
     let samples = cpu_samples.lock().unwrap();
@@ -281,6 +412,8 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
         io_throughput: ops_counter.load(Ordering::Relaxed) as f64 / 3.0,
         latency: start.elapsed(),
         cpu_tracker: Some(cpu_tracker),
+        total_tasks: task_counter.load(Ordering::SeqCst),
+        total_threads: thread_counter.load(Ordering::SeqCst),
     }
 }
 
@@ -368,12 +501,20 @@ pub fn calculate_optimal_workers(max_workers: usize) -> usize {
     find_optimal_workers(&mut system, base_workers, max_workers).0
 }
 
-fn spawn_realistic_worker_thread(ops_counter: &Arc<AtomicU64>) -> thread::JoinHandle<()> {
+fn spawn_realistic_worker_thread(
+    ops_counter: &Arc<AtomicU64>,
+    task_counter: &Arc<AtomicU64>,
+    thread_counter: &Arc<AtomicU64>,
+) -> thread::JoinHandle<()> {
     let ops_counter = Arc::clone(ops_counter);
+    let task_counter = Arc::clone(task_counter);
+    let thread_counter = Arc::clone(thread_counter);
+    
+    thread_counter.fetch_add(1, Ordering::SeqCst);
+    
     thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_io()
-            .enable_time()
+            .enable_all()
             .build()
             .unwrap();
 
@@ -381,39 +522,51 @@ fn spawn_realistic_worker_thread(ops_counter: &Arc<AtomicU64>) -> thread::JoinHa
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
             
-            // Spawn HTTP server
+            // Server task with its own counter clones
+            let server_ops = Arc::clone(&ops_counter);
+            let server_task = Arc::clone(&task_counter);
+            let server_thread = Arc::clone(&thread_counter);
+            
             let server = tokio::spawn(async move {
-                while let Ok((mut socket, client_addr)) = listener.accept().await {
+                while let Ok((mut socket, _)) = listener.accept().await {
+                    server_task.fetch_add(1, Ordering::SeqCst);
+                    
+                    // Clone counters for each connection handler
+                    let handler_ops = Arc::clone(&server_ops);
+                    let handler_thread = Arc::clone(&server_thread);
+                    
+                    handler_thread.fetch_add(1, Ordering::SeqCst);
+                    
                     tokio::spawn(async move {
                         let mut buf = vec![0; 4096];
                         loop {
                             match socket.read(&mut buf).await {
-                                Ok(0) => break, // Connection closed
+                                Ok(0) => break,
                                 Ok(n) => {
-                                    // Parse HTTP request
                                     if let Ok(request) = String::from_utf8(buf[..n].to_vec()) {
                                         if request.starts_with("GET") || request.starts_with("POST") {
-                                            // Generate HTTP response with headers
                                             let response = process_mock_request(request.as_bytes());
                                             if socket.write_all(&response).await.is_err() {
                                                 break;
                                             }
+                                            handler_ops.fetch_add(1, Ordering::SeqCst);
                                         }
                                     }
                                 }
                                 Err(_) => break,
                             }
-                            tokio::time::sleep(Duration::from_micros(100)).await;
                         }
+                        handler_thread.fetch_sub(1, Ordering::SeqCst);
                     });
                 }
             });
 
-            // Client workload with HTTP requests
+            // Client task with its own counter clone
+            let client_ops = Arc::clone(&ops_counter);
+            
             let start = Instant::now();
             while start.elapsed().as_secs() < 3 {
                 if let Ok(mut stream) = TcpStream::connect(addr).await {
-                    // Send HTTP GET request with headers
                     let request = format!(
                         "GET / HTTP/1.1\r\n\
                          Host: localhost\r\n\
@@ -425,12 +578,8 @@ fn spawn_realistic_worker_thread(ops_counter: &Arc<AtomicU64>) -> thread::JoinHa
                     if stream.write_all(request.as_bytes()).await.is_ok() {
                         let mut response = vec![0; 4096];
                         if let Ok(n) = stream.read(&mut response).await {
-                            if n > 0 {
-                                // Verify response is valid HTTP
-                                let response_str = String::from_utf8_lossy(&response[..n]);
-                                if response_str.starts_with("HTTP/1.1") {
-                                    ops_counter.fetch_add(1, Ordering::Relaxed);
-                                }
+                            if n > 0 && String::from_utf8_lossy(&response[..n]).starts_with("HTTP/1.1") {
+                                client_ops.fetch_add(1, Ordering::SeqCst);
                             }
                         }
                     }
