@@ -1,7 +1,5 @@
 // Network management module handling TCP listener initialization and connection handling
 use std::sync::Arc;
-use std::time::Duration;
-use std::ops::DerefMut;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::net::TcpListener;
 

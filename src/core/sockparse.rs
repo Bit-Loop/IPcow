@@ -169,12 +169,15 @@
      use std::net::Ipv4Addr;
      use std::io::Cursor;
 
-     // Mock stdin for testing
+     // Mock stdin for testing is not currently used     
+     #[allow(dead_code)]
      struct StdinMock {
+         #[allow(dead_code)]
          cursor: Cursor<Vec<u8>>
      }
 
      impl StdinMock {
+         #[allow(dead_code)]
          fn new(input: &str) -> Self {
              Self {
                  cursor: Cursor::new(input.as_bytes().to_vec())

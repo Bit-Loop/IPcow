@@ -47,9 +47,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get user-configured IP addresses and ports for listening
     let (ips_vec, ports_vec) = addr_input();
-    // Wrap vectors in Arc for thread-safe sharing
-    let ips: Arc<Vec<_>> = Arc::new(ips_vec);
-    let ports: Arc<Vec<_>> = Arc::new(ports_vec);
+    // Convert vectors to the expected types before wrapping in Arc
+    let ips: Arc<Vec<std::net::IpAddr>> = Arc::new(ips_vec.into_iter().map(std::net::IpAddr::V4).collect());
+    let ports: Arc<Vec<u16>> = Arc::new(ports_vec);
 
     // Generate all possible IP:Port combinations for listening
     // Creates a flat list of address configurations for the server
@@ -59,7 +59,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ports.iter().map(move |port| AddrData {
                 info: AddrType::IPv4,          // IPv4 address type
                 socket_type: AddrType::TCP,    // TCP socket type
-                address: ip.octets().into(),   // Convert IP to tuple
+                address: match ip {
+                    std::net::IpAddr::V4(ipv4) => ipv4.octets().into(),
+                    _ => panic!("IPv6 not supported"),
+                },   // Convert IP to tuple
                 port: *port,                   // Assign port number
             })
         })

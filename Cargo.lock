@@ -1031,6 +1031,7 @@ dependencies = [
  "futures",
  "ipnetwork",
  "itertools",
+ "rayon",
  "serde",
  "serde_json",
  "sysinfo",

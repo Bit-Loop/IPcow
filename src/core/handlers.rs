@@ -16,7 +16,7 @@ use crate::core::discovery::ServiceDiscovery;
 pub async fn handle_connection(mut socket: TcpStream, addr: SocketAddr, discovery: Arc<ServiceDiscovery>) {
     // Buffer for reading service detection data
     let mut detection_buf = [0_u8; 1024];
-    let mut content = String::new();
+    let content;
     
     // Send HTTP request to probe for service information
     let request = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
