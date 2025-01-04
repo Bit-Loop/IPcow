@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use std::time::Duration;
+use std::ops::DerefMut;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::net::TcpListener;
 
@@ -50,13 +52,17 @@ impl ListenerManager {
                                     });
                                 }
                                 Err(e) => {
-                                    eprintln!("Accept error on {}: {}", socket_addr, e);
+                                    let mut registry = error_registry.lock().await;
+                                    let error_id = registry.register_error(&e.to_string());
+                                    eprintln!("Accept error on {}: ID {}", socket_addr, error_id);
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("Bind error on {}: {}", socket_addr, e);
+                        let mut registry = error_registry.lock().await;
+                        let error_id = registry.register_error(&e.to_string());
+                        eprintln!("Bind error on {}: ID {}: {}", socket_addr, error_id, e);
                     }
                 }
                 drop(permit);

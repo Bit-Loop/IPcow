@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::fs::OpenOptions;
 use std::io::Write;
+use chrono::Local;
 
 #[derive(Debug)]
 pub struct ServiceDiscovery {
@@ -24,13 +25,22 @@ impl ServiceDiscovery {
         let mut discoveries = self.discoveries.lock().await;
         discoveries.insert(addr, content.to_string());
         
-        // Write to file
+        // Improved logging format
         if let Ok(mut file) = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&self.log_file) 
         {
-            let _ = writeln!(file, "{}: {}", addr, content);
+            let timestamp = chrono::Local::now();
+            let formatted_entry = format!(
+                "[{}] {}:{}\n{}\n{}\n", 
+                timestamp,
+                addr.ip(),
+                addr.port(),
+                "-".repeat(50),
+                content.trim()
+            );
+            let _ = writeln!(file, "{}", formatted_entry);
         }
     }
 }

@@ -26,13 +26,7 @@
  * 🧑‍💻 Author:          Isaiah Tyler Jackson  
  *********************************************************************
  */
-use std::{
-    io::{self, Write},
-    num::NonZeroUsize,
-    sync::Arc,
-    thread::available_parallelism,
-};
-use tokio::sync::Semaphore;
+use std::sync::Arc;
 use ipcow::{
     AddrType, 
     AddrData, 
@@ -44,7 +38,6 @@ use ipcow::modules::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let error_registry = ErrorRegistry::new();
     let max_workers = get_thread_factor();
     // Get IP and port configurations
     let (ips_vec, ports_vec) = addr_input();
