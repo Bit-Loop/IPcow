@@ -170,7 +170,7 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
     
     // Initial warm-up
     system.refresh_all();
-    thread::sleep(Duration::from_millis(100));
+    thread::sleep(Duration::from_millis(50));
     
     while next_workers <= max && start_time.elapsed() < Duration::from_secs(30) {
         let workers = next_workers;
@@ -238,8 +238,56 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
             println!("► Breaking plateau - increasing workers by 33%");
         }
 
+        next_workers = next_workers.min(max);
         last_cpu = result.cpu_usage;
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(5));
+    }
+
+    // Rapid fine-tune phase
+    while next_workers <= max && start_time.elapsed() < Duration::from_secs(30) {
+        let workers = next_workers;
+        let result = run_benchmark(workers, system);
+        
+        total_tasks += result.total_tasks;
+        total_threads += result.total_threads;
+        max_cpu = max_cpu.max(result.cpu_usage);
+        total_tested += 1;
+
+        // Fine-tuning adjustments
+        next_workers = if result.cpu_usage < target_cpu {
+            workers + 2
+        } else {
+            workers - 2
+        };
+
+        println!(
+            "Fine-Tune | Workers: {} | CPU: {:.1}% | Target: {:.1}% | Progress: {:.1}%",
+            workers,
+            result.cpu_usage,
+            target_cpu,
+            (result.cpu_usage / target_cpu) * 100.0
+        );
+
+        let score = calculate_efficiency_score(&result, workers);
+        if score > best_score || 
+           (score >= best_score && result.cpu_usage > optimal_cpu) {
+            best_score = score;
+            best_workers = workers;
+            optimal_cpu = result.cpu_usage;
+            last_improvement = Instant::now();
+            println!("► New best configuration found! Workers: {} | CPU: {:.1}%", best_workers, optimal_cpu);
+        }
+
+        // Break conditions
+        if result.cpu_usage >= target_cpu || 
+           (last_improvement.elapsed() > Duration::from_secs(5) && total_tested > 4) {
+            println!("► Optimization complete: target reached or no improvement for 5 seconds");
+            break;
+        }
+
+        next_workers = next_workers.min(max);
+        last_cpu = result.cpu_usage;
+        thread::sleep(Duration::from_millis(5));
     }
 
     let metrics = SystemMetrics {
@@ -265,7 +313,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
 
     // Warm-up phase
     system.refresh_all();
-    thread::sleep(Duration::from_millis(250)); // Reduced warm-up time
+    thread::sleep(Duration::from_millis(100)); // Reduced warm-up time
     system.refresh_cpu_all();
 
     // Count main workers
@@ -280,7 +328,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
         
         // Initial warm-up sample
         local_system.refresh_cpu_all();
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(50));
         
         while start.elapsed() < Duration::from_secs(1) { // Reduced from 2s to 1s
             local_system.refresh_cpu_all();
@@ -291,7 +339,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
                     usage,
                 });
             }
-            thread::sleep(Duration::from_millis(25)); // Reduced from 50ms to 25ms
+            thread::sleep(Duration::from_millis(10)); // Reduced from 50ms to 10ms
         }
     });
 
@@ -366,7 +414,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
                                     }
                                 }
                             }
-                            tokio::time::sleep(Duration::from_millis(10)).await; // Increased sleep time
+                            tokio::time::sleep(Duration::from_millis(5)).await; // Reduced sleep time
                         }
                     }
                     drop(server);
