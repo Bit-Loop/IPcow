@@ -90,22 +90,42 @@ A high-performance, asynchronous TCP server written in Rust, tailored for bug bo
 
 ## 🏗️ Architecture
 
-```
+```text
 ipcow
 ├── benches/
-│   ├── tcp_bench.rs       # Benchmarking code for TCP performance
-│   └── udp_bench.rs       # Benchmarking code for UDP performance
+│   └── port_scanner_bench.rs    # Performance benchmarking for port scanning
 ├── src/
-│   ├── lib.rs             # Core library functionality
-│   ├── main.rs            # Entry point for the application
-│   └── web_server.rs      # Implementation of web server functionality
+│   ├── _dead-code/             # Legacy code for reference
+│   │   ├── main copy.rs
+│   │   ├── main_test.rs
+│   │   ├── nix.unused.rs
+│   │   └── Tokio.rs
+│   ├── core/                   # Core functionality
+│   │   ├── discovery.rs        # Service discovery implementation
+│   │   ├── error.rs           # Error handling
+│   │   ├── handlers.rs        # Connection handlers
+│   │   ├── mod.rs             # Core module definition
+│   │   ├── network.rs         # Network operations
+│   │   ├── sockparse.rs       # Socket parsing
+│   │   └── types.rs           # Type definitions
+│   ├── modules/               # Feature modules
+│   │   ├── mod.rs            # Module management
+│   │   ├── ping.rs           # Ping functionality
+│   │   └── web_server.rs     # Web interface implementation
+│   ├── utils/                 # Helper utilities
+│   │   ├── mod.rs            # Utils module definition
+│   │   └── helpers.rs        # Common helper functions
+│   ├── lib.rs                # Library interface
+│   └── main.rs               # Application entry point
 ├── tests/
-│   ├── network_tests.rs   # Unit tests for network-related functionalities
-│   └── system_tests.rs    # System-level tests for overall application behavior
-├── Cargo.toml             # Configuration file for Cargo
-├── Cargo.lock             # Dependency version lock file
-├── LICENSE                # Licensing information
-└── README.md              # Project documentation
+│   ├── helpers/             # Test utilities
+│   │   └── mod.rs
+│   ├── network_tests.rs     # Network functionality tests
+│   └── system_tests.rs      # System integration tests
+├── Cargo.toml               # Project configuration
+├── Cargo.lock               # Dependency lock file
+├── LICENSE                  # MPL 2.0 license
+└── README.md               # Project documentation
 ```
 
 ## 🚀 Installation
