@@ -11,6 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::net::SocketAddr;
 use futures::stream::{self, StreamExt};
 use tokio::time::sleep;
+use std::io::{BufRead, BufReader, Write};
 
 #[derive(Debug)]
 struct BenchmarkResult {
@@ -377,36 +378,63 @@ fn spawn_realistic_worker_thread(ops_counter: &Arc<AtomicU64>) -> thread::JoinHa
             .unwrap();
 
         runtime.block_on(async {
-            // Find an available port
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
             
-            // Spawn echo server
+            // Spawn HTTP server
             let server = tokio::spawn(async move {
-                while let Ok((mut socket, _)) = listener.accept().await {
+                while let Ok((mut socket, client_addr)) = listener.accept().await {
                     tokio::spawn(async move {
-                        let mut buf = [0u8; 512]; // Reduced buffer size
-                        while let Ok(n) = socket.read(&mut buf).await {
-                            if n == 0 { break; }
-                            socket.write_all(&buf[..n]).await.unwrap();
-                            // Add small delay between operations
-                            tokio::time::sleep(Duration::from_micros(500)).await;
+                        let mut buf = vec![0; 4096];
+                        loop {
+                            match socket.read(&mut buf).await {
+                                Ok(0) => break, // Connection closed
+                                Ok(n) => {
+                                    // Parse HTTP request
+                                    if let Ok(request) = String::from_utf8(buf[..n].to_vec()) {
+                                        if request.starts_with("GET") || request.starts_with("POST") {
+                                            // Generate HTTP response with headers
+                                            let response = process_mock_request(request.as_bytes());
+                                            if socket.write_all(&response).await.is_err() {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(_) => break,
+                            }
+                            tokio::time::sleep(Duration::from_micros(100)).await;
                         }
                     });
                 }
             });
 
-            // Client workload with throttling
+            // Client workload with HTTP requests
             let start = Instant::now();
             while start.elapsed().as_secs() < 3 {
                 if let Ok(mut stream) = TcpStream::connect(addr).await {
-                    let data = vec![1u8; 512]; // Reduced packet size
-                    stream.write_all(&data).await.unwrap();
-                    let mut response = vec![0u8; 512];
-                    stream.read_exact(&mut response).await.unwrap();
-                    ops_counter.fetch_add(1, Ordering::Relaxed);
-                    // Add delay between connections
-                    tokio::time::sleep(Duration::from_millis(5)).await;
+                    // Send HTTP GET request with headers
+                    let request = format!(
+                        "GET / HTTP/1.1\r\n\
+                         Host: localhost\r\n\
+                         User-Agent: IPCow-Benchmark\r\n\
+                         Accept: */*\r\n\
+                         Connection: keep-alive\r\n\r\n"
+                    );
+                    
+                    if stream.write_all(request.as_bytes()).await.is_ok() {
+                        let mut response = vec![0; 4096];
+                        if let Ok(n) = stream.read(&mut response).await {
+                            if n > 0 {
+                                // Verify response is valid HTTP
+                                let response_str = String::from_utf8_lossy(&response[..n]);
+                                if response_str.starts_with("HTTP/1.1") {
+                                    ops_counter.fetch_add(1, Ordering::Relaxed);
+                                }
+                            }
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(1)).await;
                 }
             }
             drop(server);
@@ -414,18 +442,40 @@ fn spawn_realistic_worker_thread(ops_counter: &Arc<AtomicU64>) -> thread::JoinHa
     })
 }
 
-// Helper functions to simulate actual server workload
 fn process_mock_request(data: &[u8]) -> Vec<u8> {
-    // Simulate HTTP request parsing and response generation
-    let mut response = Vec::with_capacity(data.len());
-    for &byte in data.iter() {
-        response.push(byte.wrapping_add(1));
-    }
+    // Parse incoming request (simplified)
+    let request = String::from_utf8_lossy(data);
+    let is_get = request.starts_with("GET");
+    let is_post = request.starts_with("POST");
     
-    // Simulate HTTP header generation
-    response.extend_from_slice(b"HTTP/1.1 200 OK\r\n");
-    response
+    // Generate response with proper HTTP headers
+    let body = if is_get {
+        "Welcome to IPCow Benchmark Server"
+    } else if is_post {
+        "Received POST Request"
+    } else {
+        "Unknown Request Type"
+    };
+
+    // Current timestamp for headers
+    let timestamp = chrono::Local::now().format("%a, %d %b %Y %H:%M:%S GMT");
+    
+    // Construct full HTTP response with headers
+    format!(
+        "HTTP/1.1 200 OK\r\n\
+         Date: {}\r\n\
+         Server: IPCow-Benchmark\r\n\
+         Content-Type: text/plain\r\n\
+         Content-Length: {}\r\n\
+         Connection: keep-alive\r\n\
+         \r\n\
+         {}",
+        timestamp,
+        body.len(),
+        body
+    ).into_bytes()
 }
+
 
 fn analyze_mock_service(data: &[u8]) -> String {
     // Simulate service fingerprinting
