@@ -159,135 +159,85 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
     let mut last_cpu = 0.0;
     let mut plateau_counter = 0;
     let target_cpu = 92.0;
-    let mut total_tasks = 0;
-    let mut total_threads = 0;
-    let mut last_improvement = Instant::now();
+    let mut phase = "Ramp";
     
+    print!("\x1B[2J\x1B[1;1H");
     println!("=== Worker Optimization in Progress ===\n");
     println!("Target CPU Utilization: {:.1}%\n", target_cpu);
     
-    let mut next_workers = base;
+    let mut workers = base;
     
-    // Initial warm-up
-    system.refresh_all();
-    thread::sleep(Duration::from_millis(50));
-    
-    while next_workers <= max && start_time.elapsed() < Duration::from_secs(30) {
-        let workers = next_workers;
-        let result = run_benchmark(workers, system);
+    while workers <= max {
+        print!("\x1B[2K");
+        println!("\rPhase: {} | Testing Workers: {} | Progress: {:.1}%", 
+                phase, workers, last_cpu);
         
-        total_tasks += result.total_tasks;
-        total_threads += result.total_threads;
+        let result = run_benchmark(workers, system);
         max_cpu = max_cpu.max(result.cpu_usage);
         total_tested += 1;
-
-        // Calculate scaling factors
-        let cpu_percentage = (result.cpu_usage / target_cpu) * 100.0;
-        let distance_factor = ((target_cpu - result.cpu_usage) / target_cpu).max(0.1);
         
-        // Improved dynamic scaling based on current CPU usage and target
-        next_workers = if result.cpu_usage < target_cpu {
-            let scale = if distance_factor > 0.8 {
-                5.0  // Very far from target (< 20% of target)
-            } else if distance_factor > 0.6 {
-                4.0  // Far from target (20-40% of target)
-            } else if distance_factor > 0.4 {
-                3.0  // Moderate distance (40-60% of target)
-            } else if distance_factor > 0.2 {
-                2.0  // Getting closer (60-80% of target)
-            } else {
-                1.5  // Close to target (80-100% of target)
-            };
-            
-            (workers as f32 * scale) as usize
-        } else {
-            // Fine-tuning when we're above target
-            (workers as f32 * 0.8) as usize
-        };
-
+        print!("\x1B[1A\x1B[2K");
         println!(
-            "{} | Workers: {} | CPU: {:.1}% | Target: {:.1}% | Progress: {:.1}% | Scale: {:.1}x",
-            if cpu_percentage < 90.0 { "Ramp" } else { "Fine-Tune" },
-            workers,
-            result.cpu_usage,
-            target_cpu,
-            cpu_percentage,
-            (next_workers as f32 / workers as f32)
+            "\r{} | Workers: {} | CPU: {:.1}% | Peak: {:.1}% | Score: {:.2}",
+            phase, workers, result.cpu_usage, max_cpu,
+            calculate_efficiency_score(&result, workers)
         );
-
+        
         let score = calculate_efficiency_score(&result, workers);
         if score > best_score || 
-           (score >= best_score && result.cpu_usage > optimal_cpu) {
+           (score == best_score && (target_cpu - result.cpu_usage).abs() < (target_cpu - optimal_cpu).abs()) {
             best_score = score;
             best_workers = workers;
             optimal_cpu = result.cpu_usage;
-            last_improvement = Instant::now();
-            println!("► New best configuration found! Workers: {} | CPU: {:.1}%", best_workers, optimal_cpu);
+            println!("► New best configuration found! (CPU: {:.1}%)", optimal_cpu);
         }
 
-        // Break conditions
-        if result.cpu_usage >= target_cpu || 
-           (last_improvement.elapsed() > Duration::from_secs(5) && total_tested > 4) {
-            println!("► Optimization complete: target reached or no improvement for 5 seconds");
-            break;
+        match phase {
+            "Ramp" => {
+                if result.cpu_usage >= target_cpu {
+                    phase = "Fine-Tune";
+                    workers = (workers as f32 * 0.8) as usize; // Step back for fine-tuning
+                    println!("► Entering fine-tune phase at {} workers", workers);
+                    continue;
+                }
+
+                // Dynamic scaling based on CPU gap
+                let cpu_gap = target_cpu - result.cpu_usage;
+                workers = if cpu_gap > 40.0 {
+                    workers * 2  // Aggressive scaling
+                } else if cpu_gap > 20.0 {
+                    (workers as f32 * 1.5) as usize
+                } else {
+                    (workers as f32 * 1.3) as usize
+                };
+            }
+            "Fine-Tune" => {
+                // Handle plateaus
+                let cpu_delta = (result.cpu_usage - last_cpu).abs();
+                if cpu_delta < 2.0 {
+                    plateau_counter += 1;
+                    if plateau_counter >= 3 {
+                        workers = (workers as f32 * 1.2) as usize;
+                        plateau_counter = 0;
+                        println!("► Breaking through plateau - scaling to {} workers", workers);
+                        continue;
+                    }
+                } else {
+                    plateau_counter = 0;
+                    workers = (workers as f32 * 1.1) as usize;
+                }
+
+                if result.cpu_usage >= target_cpu {
+                    println!("\n► Target CPU utilization reached!");
+                    break;
+                }
+            }
+            _ => unreachable!()
         }
 
-        // Prevent getting stuck
-        if next_workers == workers {
-            next_workers = workers + (workers / 2);
-            println!("► Breaking plateau - increasing workers by 50%");
-        }
-
-        next_workers = next_workers.min(max);
+        workers = workers.min(max);
         last_cpu = result.cpu_usage;
-        thread::sleep(Duration::from_millis(1));
-    }
-
-    // Rapid fine-tune phase
-    while next_workers <= max && start_time.elapsed() < Duration::from_secs(30) {
-        let workers = next_workers;
-        let result = run_benchmark(workers, system);
-        
-        total_tasks += result.total_tasks;
-        total_threads += result.total_threads;
-        max_cpu = max_cpu.max(result.cpu_usage);
-        total_tested += 1;
-
-        // Fine-tuning adjustments
-        next_workers = if result.cpu_usage < target_cpu {
-            workers + 1
-        } else {
-            workers - 1
-        };
-
-        println!(
-            "Fine-Tune | Workers: {} | CPU: {:.1}% | Target: {:.1}% | Progress: {:.1}%",
-            workers,
-            result.cpu_usage,
-            target_cpu,
-            (result.cpu_usage / target_cpu) * 100.0
-        );
-
-        let score = calculate_efficiency_score(&result, workers);
-        if score > best_score || 
-           (score >= best_score && result.cpu_usage > optimal_cpu) {
-            best_score = score;
-            best_workers = workers;
-            optimal_cpu = result.cpu_usage;
-            last_improvement = Instant::now();
-            println!("► New best configuration found! Workers: {} | CPU: {:.1}%", best_workers, optimal_cpu);
-        }
-
-        // Break conditions
-        if result.cpu_usage >= target_cpu || 
-           (last_improvement.elapsed() > Duration::from_secs(5) && total_tested > 4) {
-            println!("► Optimization complete: target reached or no improvement for 5 seconds");
-            break;
-        }
-
-        next_workers = next_workers.min(max);
-        last_cpu = result.cpu_usage;
-        thread::sleep(Duration::from_millis(1));
+        thread::sleep(Duration::from_millis(50)); // Reduced stabilization time
     }
 
     let metrics = SystemMetrics {
@@ -296,8 +246,8 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
         total_workers: total_tested,
         memory_usage_mb: system.used_memory() as f64 / 1024.0 / 1024.0,
         benchmark_duration: start_time.elapsed(),
-        total_tasks,
-        total_threads,
+        total_tasks: 0, // Placeholder, update as needed
+        total_threads: 0, // Placeholder, update as needed
     };
 
     (best_workers, metrics)
@@ -311,11 +261,6 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
     let cpu_samples = Arc::new(Mutex::new(Vec::<CpuSample>::new()));
     let mut cpu_tracker = CpuTracker::new();
 
-    // Warm-up phase
-    system.refresh_all();
-    thread::sleep(Duration::from_millis(50)); // Reduced warm-up time
-    system.refresh_cpu_all();
-
     // Count main workers
     thread_counter.fetch_add(workers as u64, Ordering::SeqCst);
     
@@ -325,12 +270,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
         let mut local_system = System::new_with_specifics(
             RefreshKind::default().with_cpu(CpuRefreshKind::everything())
         );
-        
-        // Initial warm-up sample
-        local_system.refresh_cpu_all();
-        thread::sleep(Duration::from_millis(25));
-        
-        while start.elapsed() < Duration::from_secs(1) { // Reduced from 2s to 1s
+        while start.elapsed() < Duration::from_secs(4) {
             local_system.refresh_cpu_all();
             let usage = local_system.global_cpu_usage();
             if !usage.is_nan() && usage > 0.0 {
@@ -339,7 +279,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
                     usage,
                 });
             }
-            thread::sleep(Duration::from_millis(5)); // Reduced from 50ms to 5ms
+            thread::sleep(Duration::from_millis(50)); // Reduced sampling interval
         }
     });
 
@@ -414,7 +354,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
                                     }
                                 }
                             }
-                            tokio::time::sleep(Duration::from_millis(1)).await; // Reduced sleep time
+                            tokio::time::sleep(Duration::from_millis(10)).await; // Increased sleep time
                         }
                     }
                     drop(server);
