@@ -1,0 +1,1 @@
+{"max_cpu_usage":81.25,"optimal_threads":153,"total_workers":8,"memory_usage_mb":3029.484375,"total_tasks":1070469,"total_threads":817}

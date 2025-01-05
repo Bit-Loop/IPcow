@@ -240,9 +240,8 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
         }
 
         // Break conditions
-        if result.cpu_usage >= target_cpu || 
-           (last_improvement.elapsed() > Duration::from_secs(5) && total_tested > 4) {
-            println!("► Optimization complete: target reached or no improvement for 5 seconds");
+        if last_improvement.elapsed() > Duration::from_secs(5) && total_tested > 4 {
+            println!("► Optimization complete: no improvement for 5 seconds");
             break;
         }
 
@@ -293,9 +292,8 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
         }
 
         // Break conditions
-        if result.cpu_usage >= target_cpu || 
-           (last_improvement.elapsed() > Duration::from_secs(5) && total_tested > 4) {
-            println!("► Optimization complete: target reached or no improvement for 5 seconds");
+        if last_improvement.elapsed() > Duration::from_secs(5) && total_tested > 4 {
+            println!("► Optimization complete: no improvement for 5 seconds");
             break;
         }
 
@@ -518,18 +516,14 @@ fn calculate_efficiency_score(result: &BenchmarkResult, workers: usize) -> f64 {
     let cpu_tracker = result.cpu_tracker.as_ref().unwrap();
     
     // CPU utilization score (0.0 - 1.0)
-    let cpu_score = if cpu_tracker.peak > 95.0 {
-        0.0 // Overloaded
-    } else if cpu_tracker.peak > 85.0 {
-        0.3 // Very high
-    } else if cpu_tracker.peak > 75.0 {
-        0.8 // Near optimal
+    let cpu_score = if cpu_tracker.peak > 75.0 {
+        1.0
     } else if cpu_tracker.peak > 65.0 {
-        1.0 // Optimal
+        0.8
     } else if cpu_tracker.peak > 50.0 {
-        0.7 // Moderate
+        0.7
     } else {
-        0.4 // Underutilized
+        0.4
     };
 
     // Stability score based on variance between peak and average
