@@ -11,6 +11,8 @@ use std::net::SocketAddr;
 use futures::stream::{self, StreamExt};
 use tokio::time::sleep;
 use std::io::{BufRead, BufReader, Write};
+use std::fs::{File, OpenOptions};
+use std::io::{self, BufWriter};
 
 #[derive(Debug)]
 struct BenchmarkResult {
@@ -23,12 +25,15 @@ struct BenchmarkResult {
     total_threads: u64,    // Add total threads counter
 }
 
-#[derive(Debug)]
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Serialize, Deserialize)]
 struct SystemMetrics {
     max_cpu_usage: f32,
     optimal_threads: usize,
     total_workers: usize,
     memory_usage_mb: f64,
+    #[serde(skip)]
     benchmark_duration: Duration,
     total_tasks: u64,      // Add total tasks counter
     total_threads: u64,    // Add total threads counter
@@ -86,6 +91,12 @@ struct CpuMeasurement {
 }
 
 pub fn get_thread_factor() -> usize {
+    // Check for existing metrics on disk
+    if let Ok(metrics) = read_metrics_from_file() {
+        println!("Metrics loaded from file: {:?}", metrics);
+        return metrics.optimal_threads;
+    }
+
     let system_threads = available_parallelism()
         .unwrap_or(NonZeroUsize::new(1).unwrap())
         .get();
@@ -109,6 +120,9 @@ pub fn get_thread_factor() -> usize {
     println!("Memory Usage: {:.1} MB", metrics.memory_usage_mb);
     println!("Benchmark Duration: {:?}", metrics.benchmark_duration);
     println!("===============================\n");
+
+    // Write metrics to file
+    write_metrics_to_file(&metrics).expect("Failed to write metrics to file");
 
     optimal
 }
@@ -158,86 +172,136 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
     let mut total_tested = 0;
     let mut last_cpu = 0.0;
     let mut plateau_counter = 0;
-    let target_cpu = 92.0;
-    let mut phase = "Ramp";
+    let target_cpu = 80.0; // Changed target CPU utilization to 80%
+    let mut total_tasks = 0;
+    let mut total_threads = 0;
+    let mut last_improvement = Instant::now();
     
-    print!("\x1B[2J\x1B[1;1H");
     println!("=== Worker Optimization in Progress ===\n");
     println!("Target CPU Utilization: {:.1}%\n", target_cpu);
     
-    let mut workers = base;
+    let mut next_workers = base;
     
-    while workers <= max {
-        print!("\x1B[2K");
-        println!("\rPhase: {} | Testing Workers: {} | Progress: {:.1}%", 
-                phase, workers, last_cpu);
-        
+    // Initial warm-up
+    system.refresh_all();
+    thread::sleep(Duration::from_millis(50));
+    
+    while next_workers <= max && start_time.elapsed() < Duration::from_secs(30) {
+        let workers = next_workers;
         let result = run_benchmark(workers, system);
+        
+        total_tasks += result.total_tasks;
+        total_threads += result.total_threads;
         max_cpu = max_cpu.max(result.cpu_usage);
         total_tested += 1;
+
+        // Calculate scaling factors
+        let cpu_percentage = (result.cpu_usage / target_cpu) * 100.0;
+        let distance_factor = ((target_cpu - result.cpu_usage) / target_cpu).max(0.1);
         
-        print!("\x1B[1A\x1B[2K");
+        // Improved dynamic scaling based on current CPU usage and target
+        next_workers = if result.cpu_usage < target_cpu {
+            let scale = if distance_factor > 0.8 {
+                4.0  // Very far from target (< 20% of target)
+            } else if distance_factor > 0.6 {
+                3.0  // Far from target (20-40% of target)
+            } else if distance_factor > 0.4 {
+                2.0  // Moderate distance (40-60% of target)
+            } else if distance_factor > 0.2 {
+                1.5  // Getting closer (60-80% of target)
+            } else {
+                1.2  // Close to target (80-100% of target)
+            };
+            
+            (workers as f32 * scale) as usize
+        } else {
+            // Fine-tuning when we're above target
+            (workers as f32 * 0.9) as usize
+        };
+
         println!(
-            "\r{} | Workers: {} | CPU: {:.1}% | Peak: {:.1}% | Score: {:.2}",
-            phase, workers, result.cpu_usage, max_cpu,
-            calculate_efficiency_score(&result, workers)
+            "{} | Workers: {} | CPU: {:.1}% | Target: {:.1}% | Progress: {:.1}% | Scale: {:.1}x",
+            if cpu_percentage < 90.0 { "Ramp" } else { "Fine-Tune" },
+            workers,
+            result.cpu_usage,
+            target_cpu,
+            cpu_percentage,
+            (next_workers as f32 / workers as f32)
         );
-        
+
         let score = calculate_efficiency_score(&result, workers);
         if score > best_score || 
-           (score == best_score && (target_cpu - result.cpu_usage).abs() < (target_cpu - optimal_cpu).abs()) {
+           (score >= best_score && result.cpu_usage > optimal_cpu) {
             best_score = score;
             best_workers = workers;
             optimal_cpu = result.cpu_usage;
-            println!("► New best configuration found! (CPU: {:.1}%)", optimal_cpu);
+            last_improvement = Instant::now();
+            println!("► New best configuration found! Workers: {} | CPU: {:.1}%", best_workers, optimal_cpu);
         }
 
-        match phase {
-            "Ramp" => {
-                if result.cpu_usage >= target_cpu {
-                    phase = "Fine-Tune";
-                    workers = (workers as f32 * 0.8) as usize; // Step back for fine-tuning
-                    println!("► Entering fine-tune phase at {} workers", workers);
-                    continue;
-                }
-
-                // Dynamic scaling based on CPU gap
-                let cpu_gap = target_cpu - result.cpu_usage;
-                workers = if cpu_gap > 40.0 {
-                    workers * 2  // Aggressive scaling
-                } else if cpu_gap > 20.0 {
-                    (workers as f32 * 1.5) as usize
-                } else {
-                    (workers as f32 * 1.3) as usize
-                };
-            }
-            "Fine-Tune" => {
-                // Handle plateaus
-                let cpu_delta = (result.cpu_usage - last_cpu).abs();
-                if cpu_delta < 2.0 {
-                    plateau_counter += 1;
-                    if plateau_counter >= 3 {
-                        workers = (workers as f32 * 1.2) as usize;
-                        plateau_counter = 0;
-                        println!("► Breaking through plateau - scaling to {} workers", workers);
-                        continue;
-                    }
-                } else {
-                    plateau_counter = 0;
-                    workers = (workers as f32 * 1.1) as usize;
-                }
-
-                if result.cpu_usage >= target_cpu {
-                    println!("\n► Target CPU utilization reached!");
-                    break;
-                }
-            }
-            _ => unreachable!()
+        // Break conditions
+        if result.cpu_usage >= target_cpu || 
+           (last_improvement.elapsed() > Duration::from_secs(5) && total_tested > 4) {
+            println!("► Optimization complete: target reached or no improvement for 5 seconds");
+            break;
         }
 
-        workers = workers.min(max);
+        // Prevent getting stuck
+        if next_workers == workers {
+            next_workers = workers + (workers / 3);
+            println!("► Breaking plateau - increasing workers by 33%");
+        }
+
+        next_workers = next_workers.min(max);
         last_cpu = result.cpu_usage;
-        thread::sleep(Duration::from_millis(50)); // Reduced stabilization time
+        thread::sleep(Duration::from_millis(5));
+    }
+
+    // Rapid fine-tune phase
+    while next_workers <= max && start_time.elapsed() < Duration::from_secs(30) {
+        let workers = next_workers;
+        let result = run_benchmark(workers, system);
+        
+        total_tasks += result.total_tasks;
+        total_threads += result.total_threads;
+        max_cpu = max_cpu.max(result.cpu_usage);
+        total_tested += 1;
+
+        // Fine-tuning adjustments
+        next_workers = if result.cpu_usage < target_cpu {
+            workers + 2
+        } else {
+            workers - 2
+        };
+
+        println!(
+            "Fine-Tune | Workers: {} | CPU: {:.1}% | Target: {:.1}% | Progress: {:.1}%",
+            workers,
+            result.cpu_usage,
+            target_cpu,
+            (result.cpu_usage / target_cpu) * 100.0
+        );
+
+        let score = calculate_efficiency_score(&result, workers);
+        if score > best_score || 
+           (score >= best_score && result.cpu_usage > optimal_cpu) {
+            best_score = score;
+            best_workers = workers;
+            optimal_cpu = result.cpu_usage;
+            last_improvement = Instant::now();
+            println!("► New best configuration found! Workers: {} | CPU: {:.1}%", best_workers, optimal_cpu);
+        }
+
+        // Break conditions
+        if result.cpu_usage >= target_cpu || 
+           (last_improvement.elapsed() > Duration::from_secs(5) && total_tested > 4) {
+            println!("► Optimization complete: target reached or no improvement for 5 seconds");
+            break;
+        }
+
+        next_workers = next_workers.min(max);
+        last_cpu = result.cpu_usage;
+        thread::sleep(Duration::from_millis(5));
     }
 
     let metrics = SystemMetrics {
@@ -246,9 +310,12 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
         total_workers: total_tested,
         memory_usage_mb: system.used_memory() as f64 / 1024.0 / 1024.0,
         benchmark_duration: start_time.elapsed(),
-        total_tasks: 0, // Placeholder, update as needed
-        total_threads: 0, // Placeholder, update as needed
+        total_tasks,
+        total_threads,
     };
+
+    // Write metrics to file
+    write_metrics_to_file(&metrics).expect("Failed to write metrics to file");
 
     (best_workers, metrics)
 }
@@ -261,6 +328,11 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
     let cpu_samples = Arc::new(Mutex::new(Vec::<CpuSample>::new()));
     let mut cpu_tracker = CpuTracker::new();
 
+    // Warm-up phase
+    system.refresh_all();
+    thread::sleep(Duration::from_millis(100)); // Reduced warm-up time
+    system.refresh_cpu_all();
+
     // Count main workers
     thread_counter.fetch_add(workers as u64, Ordering::SeqCst);
     
@@ -270,7 +342,12 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
         let mut local_system = System::new_with_specifics(
             RefreshKind::default().with_cpu(CpuRefreshKind::everything())
         );
-        while start.elapsed() < Duration::from_secs(4) {
+        
+        // Initial warm-up sample
+        local_system.refresh_cpu_all();
+        thread::sleep(Duration::from_millis(50));
+        
+        while start.elapsed() < Duration::from_secs(1) { // Reduced from 2s to 1s
             local_system.refresh_cpu_all();
             let usage = local_system.global_cpu_usage();
             if !usage.is_nan() && usage > 0.0 {
@@ -279,7 +356,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
                     usage,
                 });
             }
-            thread::sleep(Duration::from_millis(50)); // Reduced sampling interval
+            thread::sleep(Duration::from_millis(10)); // Reduced from 50ms to 10ms
         }
     });
 
@@ -354,7 +431,7 @@ fn run_benchmark(workers: usize, system: &mut System) -> BenchmarkResult {
                                     }
                                 }
                             }
-                            tokio::time::sleep(Duration::from_millis(10)).await; // Increased sleep time
+                            tokio::time::sleep(Duration::from_millis(5)).await; // Reduced sleep time
                         }
                     }
                     drop(server);
@@ -466,14 +543,17 @@ fn calculate_efficiency_score(result: &BenchmarkResult, workers: usize) -> f64 {
     };
 
     // Throughput efficiency (workers vs CPU usage ratio)
-    let throughput_score = result.io_throughput / workers as f64;
-
-    // Latency penalty
-    let latency_penalty = 1.0 / (1.0 + result.latency.as_secs_f64());
+    let throughput_score = {
+        let cpu_per_worker = cpu_tracker.rolling_avg / workers as f32;
+        if cpu_per_worker > 2.0 { 0.3 } // Too few workers
+        else if cpu_per_worker > 1.0 { 0.6 }
+        else if cpu_per_worker > 0.5 { 1.0 } // Optimal ratio
+        else if cpu_per_worker > 0.2 { 0.7 }
+        else { 0.4 } // Too many workers
+    };
 
     // Weighted combination of scores
-    let final_score = (cpu_score * 0.4 + stability_score * 0.3 + throughput_score * 0.2 + latency_penalty * 0.1);
-    final_score
+    (cpu_score * 0.5 + stability_score * 0.3 + throughput_score * 0.2)
 }
 
 /// Calculate optimal workers based on benchmark results and system capabilities
@@ -628,4 +708,30 @@ fn create_cpu_tracker(measurements: &[CpuMeasurement]) -> CpuTracker {
         }
     }
     cpu_tracker
+}
+
+fn write_metrics_to_file(metrics: &SystemMetrics) -> io::Result<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open("metrics.txt")?;
+    let mut writer = BufWriter::new(file);
+    let metrics_json = serde_json::to_string(metrics)?;
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    println!("Saving metrics to: {}", current_dir.join("metrics.txt").display());
+    writeln!(writer, "{}", metrics_json)?;
+    Ok(())
+}
+
+fn read_metrics_from_file() -> io::Result<SystemMetrics> {
+    let file = File::open("metrics.txt")?;
+    let reader = BufReader::new(file);
+    let mut lines = reader.lines();
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    println!("Loading metrics from: {}", current_dir.join("metrics.txt").display());
+    if let Some(line) = lines.next() {
+        let metrics: SystemMetrics = serde_json::from_str(&line?)?;
+        Ok(metrics)
+    } else {        Err(io::Error::new(io::ErrorKind::NotFound, "No metrics found"))    }
 }
