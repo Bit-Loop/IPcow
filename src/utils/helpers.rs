@@ -182,11 +182,14 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
     
     let mut next_workers = base;
     
+    // Increase waiting time before the initial warm-up phase
+    thread::sleep(Duration::from_secs(5));
+    
     // Initial warm-up
     system.refresh_all();
     thread::sleep(Duration::from_millis(50));
     
-    while next_workers <= max && start_time.elapsed() < Duration::from_secs(30) {
+    while next_workers <= max && start_time.elapsed() < Duration::from_secs(15) {
         let workers = next_workers;
         let result = run_benchmark(workers, system);
         
@@ -257,7 +260,7 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
     }
 
     // Rapid fine-tune phase
-    while next_workers <= max && start_time.elapsed() < Duration::from_secs(30) {
+    if next_workers <= max && start_time.elapsed() < Duration::from_secs(15) {
         let workers = next_workers;
         let result = run_benchmark(workers, system);
         
@@ -291,15 +294,8 @@ fn find_optimal_workers(system: &mut System, base: usize, max: usize) -> (usize,
             println!("► New best configuration found! Workers: {} | CPU: {:.1}%", best_workers, optimal_cpu);
         }
 
-        // Break conditions
-        if last_improvement.elapsed() > Duration::from_secs(5) && total_tested > 4 {
-            println!("► Optimization complete: no improvement for 5 seconds");
-            break;
-        }
-
-        next_workers = next_workers.min(max);
-        last_cpu = result.cpu_usage;
-        thread::sleep(Duration::from_millis(5));
+        // Break after the first fine-tune iteration
+        println!("► First fine-tune iteration complete, stopping optimization.");
     }
 
     let metrics = SystemMetrics {
