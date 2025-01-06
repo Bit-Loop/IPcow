@@ -17,13 +17,13 @@
  *  [Note: This is a work-in-progress project.]
  *      You can do basic testing with:
  *          cargo test --test system_tests
- *           cargo test --test network_tests
- *           Althogh, the tests are not fully implemented yet and are rather basic as a place holder.
+ *          cargo test --test network_tests
+ *          Although the tests are not fully implemented yet and are rather basic placeholders.
  *
- * 🚀 Version**:       0.1.1
- * 🛠️  Created-**:      December 12, 2024  
- * 🔄 Last Update**:   Jan 4, 2025  
- * 🧑‍💻 Author:          Isaiah Tyler Jackson  
+ * 🚀 Version:         0.1.1
+ * 🛠️  Created:        December 12, 2024  
+ * 🔄 Last Update:     Jan 5, 2025  
+ * 🧑‍💻 Author:        Isaiah Tyler Jackson  
  *********************************************************************
  */
 
@@ -39,7 +39,6 @@ use ipcow::{
     utils::helpers::get_thread_factor,
 };
 use ipcow::modules::*;
-
 
 /// A high-performance, async TCP server & tool for bug bounty/pentests.
 #[derive(Parser, Debug)]
@@ -90,11 +89,9 @@ enum Commands {
     ExampleSub,
 }
 
- fn main(){
+fn main() {
     let cli = Cli::parse();
 
-    
-    // If a subcommand was provided:
     if let Some(cmd) = cli.command {
         match cmd {
             Commands::ExampleSub => {
@@ -104,70 +101,31 @@ enum Commands {
         }
     }
 
-    // If user passed a specific --<module> flag, skip the interactive menu:
-    if cli.multi_port_server {
-        start_multi_port_server();
-        return;
-    }
-    if cli.service_discovery {
-        run_service_discovery();
-        return;
-    }
-    if cli.connection_mgmt {
-        manage_connections();
-        return;
-    }
-    if cli.web_interface {
-        start_web_interface();
-        return;
-    }
-    if cli.fuzzing {
-        run_fuzzing_module();
-        return;
-    }
-    if cli.performance {
-        run_performance_metrics();
-        return;
-    }
-    if cli.error_registry {
-        run_error_registry();
-        return;
-    }
+    // Handle direct module invocations
+    if cli.multi_port_server { let _ = start_multi_port_server(); return; }
+    if cli.service_discovery { let _ = run_service_discovery(); return; }
+    if cli.connection_mgmt { let _ = manage_connections(); return; }
+    if cli.web_interface { let _ = start_web_interface(); return; }
+    if cli.fuzzing { let _ = run_fuzzing_module(); return; }
+    if cli.performance { let _ = run_performance_metrics(); return; }
+    if cli.error_registry { let _ = run_error_registry(); return; }
 
-    // Otherwise, display the interactive menu
+    // Interactive menu loop
     loop {
         print_main_menu();
-        let choice = prompt_user("> ");
-
-        match choice.trim() {
-            "1" => {
-                start_multi_port_server();
-            }
-            "2" => {
-                run_service_discovery();
-            }
-            "3" => {
-                manage_connections();
-            }
-            "4" => {
-                start_web_interface();
-            }
-            "5" => {
-                run_fuzzing_module();
-            }
-            "6" => {
-                show_performance_metrics();
-            }
-            "7" => {
-                show_error_registry();
-            }
+        match prompt_user("> ").trim() {
+            "1" => { let _ = start_multi_port_server(); }
+            "2" => { let _ = run_service_discovery(); }
+            "3" => { let _ = manage_connections(); }
+            "4" => { let _ = start_web_interface(); }
+            "5" => { let _ = run_fuzzing_module(); }
+            "6" => { let _ = show_performance_metrics(); }
+            "7" => { let _ = show_error_registry(); }
             "9" => {
                 println!("Exiting IPCow. Goodbye!");
                 break;
             }
-            _ => {
-                println!("Invalid choice. Please try again.");
-            }
+            _ => println!("Invalid choice. Please try again."),
         }
     }
 }
@@ -207,92 +165,87 @@ fn prompt_user(prompt: &str) -> String {
 /// Initializes networking components and starts the listener manager
 #[tokio::main]
 async fn start_multi_port_server() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n[IPCow] Starting Multi-Port TCP Server...");
+    
     let max_workers = get_thread_factor();
-
-    // Get user-configured IP addresses and ports for listening
     let (ips_vec, ports_vec) = addr_input();
-    // Convert vectors to the expected types before wrapping in Arc
     let ips: Arc<Vec<std::net::IpAddr>> = Arc::new(ips_vec.into_iter().map(std::net::IpAddr::V4).collect());
     let ports: Arc<Vec<u16>> = Arc::new(ports_vec);
 
-    // Generate all possible IP:Port combinations for listening
-    // Creates a flat list of address configurations for the server
+    println!("\nServer Configuration:");
+    println!("- Worker threads: {}", max_workers);
+    println!("- IP addresses: {}", ips.len());
+    println!("- Ports per IP: {}", ports.len());
+
     let addr_data_list: Vec<AddrData> = ips
         .iter()
         .flat_map(|ip| {
             ports.iter().map(move |port| AddrData {
-                info: AddrType::IPv4,          // IPv4 address type
-                socket_type: AddrType::TCP,    // TCP socket type
+                info: AddrType::IPv4,
+                socket_type: AddrType::TCP,
                 address: match ip {
                     std::net::IpAddr::V4(ipv4) => ipv4.octets().into(),
                     _ => panic!("IPv6 not supported"),
-                },   // Convert IP to tuple
-                port: *port,                   // Assign port number
+                },
+                port: *port,
             })
         })
         .collect();
 
-    // Initialize the main listener manager with configurations
-    let manager = ListenerManager::new(addr_data_list, max_workers);
-    // Spawn the manager in a separate task for concurrent operation
-    let manager_handle = tokio::spawn(async move {
-        manager.run().await.unwrap();
-    });
+    println!("- Total listeners: {}", addr_data_list.len());
+    println!("\nPress Ctrl+C to stop the server...\n");
 
-    // Wait for the manager to complete and return the result
-    ///wait_enter();
-    manager_handle.await?;
+    let manager = ListenerManager::new(addr_data_list, max_workers);
+    manager.run().await?;
+
     Ok(())
 }
 
-
-fn run_service_discovery() {
+fn run_service_discovery() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[IPCow] Running Service Discovery / Recon...");
     // TODO: real scanning or discovery logic
     println!("(Stub) Service discovery done. Press ENTER to return.");
     wait_enter();
+    Ok(())
 }
 
-fn manage_connections() {
+fn manage_connections() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[IPCow] Opening Connection Management Tools...");
     // TODO: Implement timeouts, graceful shutdown, etc.
     println!("(Stub) Connection management. Press ENTER to return.");
     wait_enter();
+    Ok(())
 }
 
 #[tokio::main]
-async fn start_web_interface() {
+async fn start_web_interface() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[IPCow] [WIP:3030]Launching Web Interface / Dashboard...");
-    
-    let web_server_handle = tokio::spawn(async {
-        web_server::run_web_server().await;
-    });
-
-    println!("(Stub) Web interface started. Press ENTER to return.");
-    wait_enter();
-    // Abort the web server task when returning
-    web_server_handle.abort();
+    web_server::run_web_server().await;
+    Ok(())
 }
 
-fn run_fuzzing_module() {
+fn run_fuzzing_module() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[IPCow] Starting Fuzzing & Traffic Analysis...");
     // TODO: Fuzzing logic, custom payload injection
     println!("(Stub) Fuzzing completed. Press ENTER to return.");
     wait_enter();
+    Ok(())
 }
 
-fn run_performance_metrics() {
+fn run_performance_metrics() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[IPCow] Gathering Performance & Metrics...");
     // TODO: concurrency tests, resource usage stats
     println!("(Stub) Performance metrics done. Press ENTER to return.");
     wait_enter();
+    Ok(())
 }
 
-fn run_error_registry() {
+fn run_error_registry() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[IPCow] Opening Error Registry & Logging...");
     // TODO: Show or manage deduplicated errors, correlation, etc.
     println!("(Stub) Error registry. Press ENTER to return.");
     wait_enter();
+    Ok(())
 }
 
 fn wait_enter() {
@@ -300,16 +253,18 @@ fn wait_enter() {
     io::stdin().read_line(&mut input).expect("Failed to read line");
 }
 
-fn show_performance_metrics() {
+fn show_performance_metrics() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[IPCow] Displaying Performance & Metrics...");
     // TODO: Implement performance monitoring
     println!("(Stub) Performance metrics shown. Press ENTER to return.");
     wait_enter();
+    Ok(())
 }
 
-fn show_error_registry() {
+fn show_error_registry() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[IPCow] Opening Error Registry & Logging...");
     // TODO: Implement error logging system
     println!("(Stub) Error registry displayed. Press ENTER to return.");
     wait_enter();
+    Ok(())
 }
