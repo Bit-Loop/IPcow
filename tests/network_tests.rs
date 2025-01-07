@@ -1,7 +1,7 @@
-use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt};
-use std::time::Duration;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::io::AsyncReadExt;
+use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 const TEST_PORT_1: u16 = 9999;
@@ -12,10 +12,14 @@ const TEST_DURATION: u64 = 10;
 async fn test_network_throughput() {
     let addr1 = format!("127.0.0.1:{}", TEST_PORT_1);
     let addr2 = format!("127.0.0.1:{}", TEST_PORT_2);
-    
-    let listener1 = TcpListener::bind(&addr1).await.expect("Failed to bind to first port");
-    let listener2 = TcpListener::bind(&addr2).await.expect("Failed to bind to second port");
-    
+
+    let listener1 = TcpListener::bind(&addr1)
+        .await
+        .expect("Failed to bind to first port");
+    let listener2 = TcpListener::bind(&addr2)
+        .await
+        .expect("Failed to bind to second port");
+
     let total_bytes = Arc::new(Mutex::new(0));
     let start_time = std::time::Instant::now();
 
@@ -32,7 +36,10 @@ async fn test_network_throughput() {
     assert!(bitrate > 0.0, "Bitrate should be greater than 0");
 }
 
-async fn spawn_listener(listener: TcpListener, total_bytes: Arc<Mutex<usize>>) -> tokio::task::JoinHandle<()> {
+async fn spawn_listener(
+    listener: TcpListener,
+    total_bytes: Arc<Mutex<usize>>,
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             match listener.accept().await {

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-
 #[derive(Debug, Default)]
 pub struct ErrorRegistry {
     errors: HashMap<String, Vec<String>>,

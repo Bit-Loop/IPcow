@@ -22,24 +22,21 @@
  *
  * 🚀 Version:         0.1.1
  * 🛠️  Created:        December 12, 2024  
- * 🔄 Last Update:     Jan 5, 2025  
+ * 🔄 Last Update:     Jan 6, 2025  
  * 🧑‍💻 Author:        Isaiah Tyler Jackson  
  *********************************************************************
  */
 
-
 use clap::{ArgAction, ArgGroup, Parser, Subcommand};
-use std::io::{self, Write};
-use std::sync::Arc;
+use ipcow::core::IPCowCore;
+use ipcow::modules::*;
 use ipcow::{
-    AddrType, 
-    AddrData, 
-    ListenerManager,
     core::{error::ErrorRegistry, sockparse::addr_input},
     utils::helpers::get_thread_factor,
+    AddrData, AddrType, ListenerManager,
 };
-use ipcow::modules::*;
-use ipcow::core::IPCowCore;
+use std::io::{self, Write};
+use std::sync::Arc;
 
 /// A high-performance, async TCP server & tool for bug bounty/pentests.
 #[derive(Parser, Debug)]
@@ -47,7 +44,7 @@ use ipcow::core::IPCowCore;
 #[command(group(
     ArgGroup::new("mode")
         .required(false)
-        .args(["multi_port_server", "service_discovery", "connection_mgmt", "web_interface", "fuzzing", "performance", "error_registry"]),
+        .args(["multi_port_server", "service_discovery", "connection_mgmt", "web_interface", "fuzzing", "performance", "error_registry", "test_network"]),
 ))]
 struct Cli {
     /// Run the Multi-Port TCP Server module immediately (skips interactive menu)
@@ -78,6 +75,10 @@ struct Cli {
     #[arg(long, group = "mode", action = ArgAction::SetTrue)]
     error_registry: bool,
 
+    /// Run network tests
+    #[arg(long, group = "mode", action = ArgAction::SetTrue)]
+    test_network: bool,
+
     /// Optional subcommands if you want more structured CLI
     #[command(subcommand)]
     command: Option<Commands>,
@@ -103,25 +104,67 @@ fn main() {
     }
 
     // Handle direct module invocations
-    if cli.multi_port_server { let _ = start_multi_port_server(); return; }
-    if cli.service_discovery { let _ = run_service_discovery(); return; }
-    if cli.connection_mgmt { let _ = manage_connections(); return; }
-    if cli.web_interface { let _ = start_web_interface(); return; }
-    if cli.fuzzing { let _ = run_fuzzing_module(); return; }
-    if cli.performance { let _ = run_performance_metrics(); return; }
-    if cli.error_registry { let _ = run_error_registry(); return; }
+    if cli.multi_port_server {
+        let _ = start_multi_port_server();
+        return;
+    }
+    if cli.service_discovery {
+        let _ = run_service_discovery();
+        return;
+    }
+    if cli.connection_mgmt {
+        let _ = manage_connections();
+        return;
+    }
+    if cli.web_interface {
+        let _ = start_web_interface();
+        return;
+    }
+    if cli.fuzzing {
+        let _ = run_fuzzing_module();
+        return;
+    }
+    if cli.performance {
+        let _ = run_performance_metrics();
+        return;
+    }
+    if cli.error_registry {
+        let _ = run_error_registry();
+        return;
+    }
+    if cli.test_network {
+        let _ = run_network_tests();
+        return;
+    }
 
     // Interactive menu loop
     loop {
         print_main_menu();
         match prompt_user("> ").trim() {
-            "1" => { let _ = start_multi_port_server(); }
-            "2" => { let _ = run_service_discovery(); }
-            "3" => { let _ = manage_connections(); }
-            "4" => { let _ = start_web_interface(); }
-            "5" => { let _ = run_fuzzing_module(); }
-            "6" => { let _ = show_performance_metrics(); }
-            "7" => { let _ = show_error_registry(); }
+            "1" => {
+                let _ = start_multi_port_server();
+            }
+            "2" => {
+                let _ = run_service_discovery();
+            }
+            "3" => {
+                let _ = manage_connections();
+            }
+            "4" => {
+                let _ = start_web_interface();
+            }
+            "5" => {
+                let _ = run_fuzzing_module();
+            }
+            "6" => {
+                let _ = show_performance_metrics();
+            }
+            "7" => {
+                let _ = show_error_registry();
+            }
+            "8" => {
+                let _ = run_network_tests();
+            }
             "9" => {
                 println!("Exiting IPCow. Goodbye!");
                 break;
@@ -144,6 +187,7 @@ fn print_main_menu() {
     println!("5) Fuzzing & Traffic Analysis");
     println!("6) Performance & Metrics");
     println!("7) Error Registry & Logging");
+    println!("8) Run Network Tests");
     println!("9) Exit");
 }
 
@@ -167,12 +211,13 @@ fn prompt_user(prompt: &str) -> String {
 #[tokio::main]
 async fn start_multi_port_server() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[IPCow] Starting Multi-Port TCP Server...");
-    
+
     let core = IPCowCore::new();
     let max_workers = get_thread_factor();
     let (ips_vec, ports_vec) = addr_input();
-    
-    let ips: Arc<Vec<std::net::IpAddr>> = Arc::new(ips_vec.into_iter().map(std::net::IpAddr::V4).collect());
+
+    let ips: Arc<Vec<std::net::IpAddr>> =
+        Arc::new(ips_vec.into_iter().map(std::net::IpAddr::V4).collect());
     let ports: Arc<Vec<u16>> = Arc::new(ports_vec);
 
     println!("\nServer Configuration:");
@@ -257,7 +302,9 @@ fn run_error_registry() -> Result<(), Box<dyn std::error::Error>> {
 
 fn wait_enter() {
     let mut input = String::new();
-    io::stdin().read_line(&mut input).expect("Failed to read line");
+    io::stdin()
+        .read_line(&mut input)
+        .expect("Failed to read line");
 }
 
 fn show_performance_metrics() -> Result<(), Box<dyn std::error::Error>> {
@@ -272,6 +319,48 @@ fn show_error_registry() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[IPCow] Opening Error Registry & Logging...");
     // TODO: Implement error logging system
     println!("(Stub) Error registry displayed. Press ENTER to return.");
+    wait_enter();
+    Ok(())
+}
+
+#[tokio::main]
+async fn run_network_tests() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n[IPCow] Running Network Tests...");
+    
+    // Test local connectivity
+    let local_ports = vec![80, 443, 8080];
+    println!("Testing local ports: {:?}", local_ports);
+    
+    for port in local_ports {
+        let addr = format!("127.0.0.1:{}", port);
+        match tokio::net::TcpStream::connect(&addr).await {
+            Ok(_) => println!("✅ Port {} is open", port),
+            Err(_) => println!("❌ Port {} is closed", port),
+        }
+    }
+
+    // Test DNS resolution
+    println!("\nTesting DNS resolution...");
+    let domains = vec!["google.com", "github.com", "example.com"];
+    for domain in domains {
+        match tokio::net::lookup_host(format!("{}:80", domain)).await {
+            Ok(addrs) => println!("✅ {} resolves to: {:?}", domain, addrs.collect::<Vec<_>>()),
+            Err(e) => println!("❌ Failed to resolve {}: {}", domain, e),
+        }
+    }
+
+    // Test network latency
+    println!("\nTesting network latency...");
+    let targets = vec!["1.1.1.1:53", "8.8.8.8:53"];
+    for target in targets {
+        let start = std::time::Instant::now();
+        match tokio::net::TcpStream::connect(target).await {
+            Ok(_) => println!("✅ {} latency: {:?}", target, start.elapsed()),
+            Err(e) => println!("❌ Failed to connect to {}: {}", target, e),
+        }
+    }
+
+    println!("\nNetwork tests complete. Press ENTER to return.");
     wait_enter();
     Ok(())
 }

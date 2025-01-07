@@ -1,6 +1,6 @@
+use crate::core::types::{ConnectionState, NetworkConfig};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use crate::core::types::{ConnectionState, NetworkConfig};
 
 pub struct CoreState {
     pub active_connections: HashMap<SocketAddr, ConnectionState>,
@@ -26,7 +26,8 @@ impl CoreState {
     }
 
     pub fn get_active_connections(&self) -> Vec<(SocketAddr, ConnectionState)> {
-        self.active_connections.iter()
+        self.active_connections
+            .iter()
             .map(|(k, v)| (*k, v.clone()))
             .collect()
     }

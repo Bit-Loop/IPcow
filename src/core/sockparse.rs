@@ -1,8 +1,8 @@
 /*
  *********************************************************
- *                     🔍 SockParse 🔍                  
- *      A lightweight Rust library for parsing user  
- *      inputs into socket addresses for TCP/UDP.    
+ *                     🔍 SockParse 🔍
+ *      A lightweight Rust library for parsing user
+ *      inputs into socket addresses for TCP/UDP.
  * -----------------------------------------------------
  * ✨ Features:
  *   - Parse IP ranges, CIDR blocks, and wildcards.
@@ -10,34 +10,34 @@
  *   - Output ready-to-use `SocketAddr` arrays for Tokio.
  *
  * 🚀 Version:   0.2.0
- * 🧑‍💻 Author:       Isaiah Tyler Jackson   
- * 
+ * 🧑‍💻 Author:       Isaiah Tyler Jackson
+ *
  *    Todo: Add parsing for IP and port lists!
- * 
+ *
  *********************************************************
  */
 
- use std::io;
- use std::net::Ipv4Addr;
- use ipnetwork::Ipv4Network;
- 
- /// Reads input from user with a prompt
- pub fn read_input(prompt: &str) -> String {
-     let mut input = String::new();
-     println!("{}", prompt);
-     io::stdin()
-         .read_line(&mut input)
-         .expect("Failed to read input.");
-     input.trim().to_string()
- }
- 
- /// Parses IP address input into supported formats
- /// Supported formats:
- /// - IP range: "192.168.1.1-192.168.1.255"
- /// - CIDR block: "192.168.1.0/24"
- /// - Wildcards: "192.168.X.X" or "X.X.X.X"
- /// - Single IP: "192.168.1.1"
- pub fn parse_ip_input(input: &str) -> Vec<Ipv4Addr> {
+use ipnetwork::Ipv4Network;
+use std::io;
+use std::net::Ipv4Addr;
+
+/// Reads input from user with a prompt
+pub fn read_input(prompt: &str) -> String {
+    let mut input = String::new();
+    println!("{}", prompt);
+    io::stdin()
+        .read_line(&mut input)
+        .expect("Failed to read input.");
+    input.trim().to_string()
+}
+
+/// Parses IP address input into supported formats
+/// Supported formats:
+/// - IP range: "192.168.1.1-192.168.1.255"
+/// - CIDR block: "192.168.1.0/24"
+/// - Wildcards: "192.168.X.X" or "X.X.X.X"
+/// - Single IP: "192.168.1.1"
+pub fn parse_ip_input(input: &str) -> Vec<Ipv4Addr> {
     let mut results = Vec::new();
 
     // Normalize input to uppercase for wildcard processing
@@ -92,7 +92,9 @@
                         let ip = format!("{}.{}.{}.{}", a, b, c, d);
                         if let Ok(parsed_ip) = ip.parse::<Ipv4Addr>() {
                             // Skip IPs ending with .0 unless explicitly specified
-                            if !parsed_ip.to_string().ends_with(".0") || input.contains(&parsed_ip.to_string()) {
+                            if !parsed_ip.to_string().ends_with(".0")
+                                || input.contains(&parsed_ip.to_string())
+                            {
                                 results.push(parsed_ip);
                             }
                         }
@@ -110,124 +112,121 @@
     results
 }
 
- 
- /// Parses port input into a list of ports
- /// Supported formats:
- /// - Port range: "0-65535"
- /// - Comma-separated list: "80, 443, 8080"
- /// - Single port: "8080"
- pub fn parse_port_input(input: &str) -> Vec<u16> {
-     let mut ports = Vec::new();
-     if input.contains('-') {
-         // Handle range: "0-65535"
-         let parts: Vec<&str> = input.split('-').collect();
-         if parts.len() == 2 {
-             let start: u16 = parts[0].parse().expect("Invalid start port");
-             let end: u16 = parts[1].parse().expect("Invalid end port");
-             for port in start..=end {
-                 ports.push(port);
-             }
-         }
-     } else if input.contains(',') {
-         // Handle list of ports: "1, 2, 5"
-         for p in input.split(',') {
-             let port: u16 = p.trim().parse().expect("Invalid port number");
-             ports.push(port);
-         }
-     } else {
-         // Single port
-         ports.push(input.parse().expect("Invalid port"));
-     }
- 
-     ports
- }
- 
- /// Main function for input and parsing
- pub fn addr_input() -> (Vec<Ipv4Addr>, Vec<u16>) {
-     // Read IP address input
-     let ip_input = read_input(
+/// Parses port input into a list of ports
+/// Supported formats:
+/// - Port range: "0-65535"
+/// - Comma-separated list: "80, 443, 8080"
+/// - Single port: "8080"
+pub fn parse_port_input(input: &str) -> Vec<u16> {
+    let mut ports = Vec::new();
+    if input.contains('-') {
+        // Handle range: "0-65535"
+        let parts: Vec<&str> = input.split('-').collect();
+        if parts.len() == 2 {
+            let start: u16 = parts[0].parse().expect("Invalid start port");
+            let end: u16 = parts[1].parse().expect("Invalid end port");
+            for port in start..=end {
+                ports.push(port);
+            }
+        }
+    } else if input.contains(',') {
+        // Handle list of ports: "1, 2, 5"
+        for p in input.split(',') {
+            let port: u16 = p.trim().parse().expect("Invalid port number");
+            ports.push(port);
+        }
+    } else {
+        // Single port
+        ports.push(input.parse().expect("Invalid port"));
+    }
+
+    ports
+}
+
+/// Main function for input and parsing
+pub fn addr_input() -> (Vec<Ipv4Addr>, Vec<u16>) {
+    // Read IP address input
+    let ip_input = read_input(
          "Enter the listen IP addresses.\nFormat: 255.255.255.0-255.255.255.255, 192.168.1.X, or 192.168.1.0/24:",
      );
-     // Read port input
-     let port_input = read_input(
-         "Enter the listen IP ports.\nFormat: 0-65535, or \"1, 2, 5\":",
-     );
-     // Parse inputs
-     let ips = parse_ip_input(&ip_input);
-     let ports = parse_port_input(&port_input);
- 
-     // Output results
-     println!("Parsed IP Addresses: {:?}", ips.len());
-     println!("Parsed Ports: {:?}", ports.len());
- 
-     (ips, ports)
- }
+    // Read port input
+    let port_input = read_input("Enter the listen IP ports.\nFormat: 0-65535, or \"1, 2, 5\":");
+    // Parse inputs
+    let ips = parse_ip_input(&ip_input);
+    let ports = parse_port_input(&port_input);
 
- #[cfg(test)]
- mod tests {
-     use super::*;
-     use std::net::Ipv4Addr;
-     use std::io::Cursor;
+    // Output results
+    println!("Parsed IP Addresses: {:?}", ips.len());
+    println!("Parsed Ports: {:?}", ports.len());
 
-     // Mock stdin for testing is not currently used     
-     #[allow(dead_code)]
-     struct StdinMock {
-         #[allow(dead_code)]
-         cursor: Cursor<Vec<u8>>
-     }
+    (ips, ports)
+}
 
-     impl StdinMock {
-         #[allow(dead_code)]
-         fn new(input: &str) -> Self {
-             Self {
-                 cursor: Cursor::new(input.as_bytes().to_vec())
-             }
-         }
-     }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+    use std::net::Ipv4Addr;
 
-     #[test]
-     fn test_parse_ip_input() {
-         let result = parse_ip_input("127.0.0.1");
-         assert_eq!(result.len(), 1);
-         assert_eq!(result[0], Ipv4Addr::new(127, 0, 0, 1));
-     }
- 
-     #[test]
-     fn test_parse_ip_range() {
-         let result = parse_ip_input("127.0.0.1-127.0.0.3");
-         assert_eq!(result.len(), 3);
-         assert!(result.contains(&Ipv4Addr::new(127, 0, 0, 1)));
-         assert!(result.contains(&Ipv4Addr::new(127, 0, 0, 2)));
-         assert!(result.contains(&Ipv4Addr::new(127, 0, 0, 3)));
-     }
- 
-     #[test]
-     fn test_parse_wildcard() {
-         let result = parse_ip_input("127.0.0.X");
-         assert!(!result.is_empty());
-         for ip in result {
-             assert_eq!(ip.octets()[0], 127);
-             assert_eq!(ip.octets()[1], 0);
-             assert_eq!(ip.octets()[2], 0);
-         }
-     }
- 
-     #[test]
-     fn test_parse_port_input() {
-         let result = parse_port_input("9998-10000");
-         assert_eq!(result.len(), 3);
-         assert!(result.contains(&9998));
-         assert!(result.contains(&9999));
-         assert!(result.contains(&10000));
-     }
- 
-     #[test]
-     fn test_addr_input_format() {
-         let input = "127.0.0.1\n80\n";
-         let _mock = StdinMock::new(input);  
-         
-         let (ips, ports) = addr_input();
-         assert!(!ips.is_empty(), "IP list should not be empty");
-         assert!(!ports.is_empty(), "Port list should not be empty");
-     }
- }
+    // Mock stdin for testing is not currently used
+    #[allow(dead_code)]
+    struct StdinMock {
+        #[allow(dead_code)]
+        cursor: Cursor<Vec<u8>>,
+    }
+
+    impl StdinMock {
+        #[allow(dead_code)]
+        fn new(input: &str) -> Self {
+            Self {
+                cursor: Cursor::new(input.as_bytes().to_vec()),
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_ip_input() {
+        let result = parse_ip_input("127.0.0.1");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], Ipv4Addr::new(127, 0, 0, 1));
+    }
+
+    #[test]
+    fn test_parse_ip_range() {
+        let result = parse_ip_input("127.0.0.1-127.0.0.3");
+        assert_eq!(result.len(), 3);
+        assert!(result.contains(&Ipv4Addr::new(127, 0, 0, 1)));
+        assert!(result.contains(&Ipv4Addr::new(127, 0, 0, 2)));
+        assert!(result.contains(&Ipv4Addr::new(127, 0, 0, 3)));
+    }
+
+    #[test]
+    fn test_parse_wildcard() {
+        let result = parse_ip_input("127.0.0.X");
+        assert!(!result.is_empty());
+        for ip in result {
+            assert_eq!(ip.octets()[0], 127);
+            assert_eq!(ip.octets()[1], 0);
+            assert_eq!(ip.octets()[2], 0);
+        }
+    }
+
+    #[test]
+    fn test_parse_port_input() {
+        let result = parse_port_input("9998-10000");
+        assert_eq!(result.len(), 3);
+        assert!(result.contains(&9998));
+        assert!(result.contains(&9999));
+        assert!(result.contains(&10000));
+    }
+
+    #[test]
+    fn test_addr_input_format() {
+        let input = "127.0.0.1\n80\n";
+        let _mock = StdinMock::new(input);
+
+        let (ips, ports) = addr_input();
+        assert!(!ips.is_empty(), "IP list should not be empty");
+        assert!(!ports.is_empty(), "Port list should not be empty");
+    }
+}

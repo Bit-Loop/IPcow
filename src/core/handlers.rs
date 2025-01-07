@@ -1,11 +1,11 @@
 // Network connection handler module implementing connection processing and service detection
 
-use std::sync::Arc;
-use std::net::SocketAddr;
-use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use chrono::Local;
 use crate::core::discovery::ServiceDiscovery;
+use chrono::Local;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 /// Main connection handler function that processes new TCP connections
 /// Performs service detection and responds with connection status
@@ -13,11 +13,15 @@ use crate::core::discovery::ServiceDiscovery;
 ///   socket: Active TCP connection
 ///   addr: Remote peer address
 ///   discovery: Shared service detection system
-pub async fn handle_connection(mut socket: TcpStream, addr: SocketAddr, discovery: Arc<ServiceDiscovery>) {
+pub async fn handle_connection(
+    mut socket: TcpStream,
+    addr: SocketAddr,
+    discovery: Arc<ServiceDiscovery>,
+) {
     // Buffer for reading service detection data
     let mut detection_buf = [0_u8; 1024];
     let content;
-    
+
     // Send HTTP request to probe for service information
     let request = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
     if socket.write_all(request.as_bytes()).await.is_ok() {

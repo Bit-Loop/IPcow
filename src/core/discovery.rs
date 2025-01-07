@@ -1,11 +1,10 @@
-use std::path::PathBuf;
 use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use std::fs::OpenOptions;
 use std::io::Write;
-
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// ServiceDiscovery struct handles detection and logging of network services
 /// Maintains thread-safe state of discovered services and their details
@@ -35,22 +34,22 @@ impl ServiceDiscovery {
         // Update in-memory map of discoveries
         let mut discoveries = self.discoveries.lock().await;
         discoveries.insert(addr, content.to_string());
-        
+
         // Append discovery to log file with timestamp and formatting
         if let Ok(mut file) = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&self.log_file) 
+            .open(&self.log_file)
         {
             let timestamp = chrono::Local::now();
             // Format log entry with timestamp, address and content
             let formatted_entry = format!(
-                "[{}] {}:{}\n{}\n{}\n", 
+                "[{}] {}:{}\n{}\n{}\n",
                 timestamp,
-                addr.ip(),  // Log IP address
-                addr.port(), // Log port number
+                addr.ip(),      // Log IP address
+                addr.port(),    // Log port number
                 "-".repeat(50), // Visual separator
-                content.trim() // Actual service content
+                content.trim()  // Actual service content
             );
             let _ = writeln!(file, "{}", formatted_entry);
         }

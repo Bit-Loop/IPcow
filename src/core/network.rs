@@ -1,13 +1,13 @@
 // Network management module handling TCP listener initialization and connection handling
 use std::sync::Arc;
-use tokio::sync::{Mutex, Semaphore};
 use tokio::net::TcpListener;
+use tokio::sync::{Mutex, Semaphore};
 
 use crate::core::{
+    discovery::ServiceDiscovery,
     error::ErrorRegistry,
-    types::{AddrData, socket_addr_create},
-    discovery::ServiceDiscovery, 
     handlers::handle_connection,
+    types::{socket_addr_create, AddrData},
 };
 
 /// Main struct responsible for managing multiple TCP listeners
@@ -42,7 +42,7 @@ impl ListenerManager {
         let mut listener_tasks = Vec::new();
         // Limit concurrent connections
         let semaphore = Arc::new(Semaphore::new(self.max_concurrent));
-        
+
         // Iterate through each address/port combination
         for addr_data in self.addr_data.iter() {
             // Acquire permission to create new listener
@@ -50,7 +50,7 @@ impl ListenerManager {
             let error_registry = self.error_registry.clone();
             let discovery = self.service_discovery.clone();
             let socket_addr = socket_addr_create(addr_data.address, addr_data.port);
-            
+
             // Spawn individual listener task
             let task = tokio::spawn(async move {
                 match TcpListener::bind(&socket_addr).await {
@@ -85,7 +85,7 @@ impl ListenerManager {
                 }
                 drop(permit);
             });
-            
+
             listener_tasks.push(task);
         }
 

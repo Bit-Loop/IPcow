@@ -12,7 +12,7 @@ name = "ipcow"
 path = "src/main.rs"
 
 [dependencies]
-chrono = "*"
+chrono = { version = "*", features = ["serde"] }
 tokio = { version = "*", features = ["full"] }
 ipnetwork = "*"
 itertools = "*"

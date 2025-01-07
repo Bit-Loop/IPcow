@@ -1,5 +1,5 @@
 //! IPCow - High Performance Network Testing Library
-//! 
+//!
 //! This library provides core functionality for network testing and analysis:
 //! - Multi-threaded TCP/UDP server capabilities
 //! - Service discovery and logging
@@ -14,19 +14,19 @@ pub mod modules;
 pub mod utils;
 
 // Re-export core components
-pub use crate::core::IPCowCore;
 pub use crate::core::CoreConfig;
+pub use crate::core::IPCowCore;
 pub use crate::core::LogLevel;
 
 // Re-export commonly used types and functions for easier access
 pub use crate::core::{
-    ServiceDiscovery,    // Service discovery and logging
-    network::ListenerManager,  // Multi-threaded listener management
-    types::{AddrType, AddrData},  // Network address type definitions
-    error::ErrorRegistry,  // Error tracking and management
-    sockparse::addr_input,  // Address parsing utilities
-    handlers::handle_connection,  // Connection handling
+    error::ErrorRegistry,        // Error tracking and management
+    handlers::handle_connection, // Connection handling
+    network::ListenerManager,    // Multi-threaded listener management
+    sockparse::addr_input,       // Address parsing utilities
+    types::{AddrData, AddrType}, // Network address type definitions
+    ServiceDiscovery,            // Service discovery and logging
 };
 
-pub use crate::modules::{ping, web_server};  // Feature modules
-pub use crate::utils::helpers;  // Utility functions
+pub use crate::modules::{ping, web_server}; // Feature modules
+pub use crate::utils::helpers; // Utility functions
