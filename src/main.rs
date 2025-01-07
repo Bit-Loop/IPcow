@@ -39,6 +39,7 @@ use ipcow::{
     utils::helpers::get_thread_factor,
 };
 use ipcow::modules::*;
+use ipcow::core::IPCowCore;
 
 /// A high-performance, async TCP server & tool for bug bounty/pentests.
 #[derive(Parser, Debug)]
@@ -167,8 +168,10 @@ fn prompt_user(prompt: &str) -> String {
 async fn start_multi_port_server() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[IPCow] Starting Multi-Port TCP Server...");
     
+    let core = IPCowCore::new();
     let max_workers = get_thread_factor();
     let (ips_vec, ports_vec) = addr_input();
+    
     let ips: Arc<Vec<std::net::IpAddr>> = Arc::new(ips_vec.into_iter().map(std::net::IpAddr::V4).collect());
     let ports: Arc<Vec<u16>> = Arc::new(ports_vec);
 
@@ -193,10 +196,14 @@ async fn start_multi_port_server() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     println!("- Total listeners: {}", addr_data_list.len());
-    println!("\nPress Ctrl+C to stop the server...\n");
 
-    let manager = ListenerManager::new(addr_data_list, max_workers);
-    manager.run().await?;
+    {
+        let mut network_manager = core.network_manager.lock().await;
+        *network_manager = ListenerManager::new(addr_data_list, max_workers);
+    }
+
+    println!("\nPress Ctrl+C to stop the server...\n");
+    core.start().await?;
 
     Ok(())
 }

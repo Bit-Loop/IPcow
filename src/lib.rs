@@ -13,6 +13,11 @@ pub mod modules;
 // Utility functions and helpers
 pub mod utils;
 
+// Re-export core components
+pub use crate::core::IPCowCore;
+pub use crate::core::CoreConfig;
+pub use crate::core::LogLevel;
+
 // Re-export commonly used types and functions for easier access
 pub use crate::core::{
     ServiceDiscovery,    // Service discovery and logging
