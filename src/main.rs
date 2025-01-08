@@ -34,9 +34,11 @@ use ipcow::{
     core::{error::ErrorRegistry, sockparse::addr_input, ascii_cube::{display_rotating_cube}},
     utils::helpers::get_thread_factor,
     AddrData, AddrType, ListenerManager,
+    modules::ping,  // Add ping module
 };
 use std::io::{self, Write};
 use std::sync::Arc;
+use std::net::IpAddr;
 
 /// A high-performance, async TCP server & tool for bug bounty/pentests.
 #[derive(Parser, Debug)]
@@ -163,9 +165,12 @@ fn main() {
                 let _ = show_error_registry();
             }
             "8" => {
-                let _ = display_rotating_cube();
+                let _ = run_network_tests();    // Add this case
             }
             "9" => {
+                let _ = display_rotating_cube();
+            }
+            "10" => {                           // Update exit number
                 println!("Exiting IPCow. Goodbye!");
                 break;
             }
@@ -187,8 +192,9 @@ fn print_main_menu() {
     println!("5) Fuzzing & Traffic Analysis");
     println!("6) Performance & Metrics");
     println!("7) Error Registry & Logging");
-    println!("8) TEST ASCII Animation");
-    println!("9) Exit");
+    println!("8) Quick Network Test (Ping)");     
+    println!("9) ASCII Animation");
+    println!("10) Exit");
 }
 
 fn prompt_user(prompt: &str) -> String {
@@ -364,3 +370,31 @@ async fn run_network_tests() -> Result<(), Box<dyn std::error::Error>> {
     wait_enter();
     Ok(())
 }
+
+/* 
+#[tokio::main]
+async fn run_ping_discovery() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n[IPCow] Starting Host Discovery...");
+    
+    let (ips_vec, ports) = addr_input();
+    let ips: Vec<IpAddr> = ips_vec.into_iter()
+        .map(std::net::IpAddr::V4)
+        .collect();
+
+    println!("Scanning {} hosts...", ips.len());
+    
+    match ping::ping_range(&ips, ports[0], ports[ports.len()-1]).await {
+        Ok(alive_hosts) => {
+            println!("\nDiscovered {} live hosts:", alive_hosts.len());
+            for host in alive_hosts {
+                println!("  ✓ {}", host);
+            }
+        }
+        Err(e) => eprintln!("Error during ping scan: {}", e),
+    }
+
+    println!("\nScan complete. Press ENTER to return.");
+    wait_enter();
+    Ok(())
+}
+*/
