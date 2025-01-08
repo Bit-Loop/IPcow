@@ -5,10 +5,14 @@ pub mod network;
 pub mod sockparse;
 pub mod state;
 pub mod types;
+pub mod ascii_cube;
 
-use crate::modules;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+pub use ascii_cube::AsciiCube;
+pub use ascii_cube::display_rotating_cube;
+
 
 // Core configuration settings
 #[derive(Debug)]

@@ -31,7 +31,7 @@ use clap::{ArgAction, ArgGroup, Parser, Subcommand};
 use ipcow::core::IPCowCore;
 use ipcow::modules::*;
 use ipcow::{
-    core::{error::ErrorRegistry, sockparse::addr_input},
+    core::{error::ErrorRegistry, sockparse::addr_input, ascii_cube::{display_rotating_cube}},
     utils::helpers::get_thread_factor,
     AddrData, AddrType, ListenerManager,
 };
@@ -163,7 +163,7 @@ fn main() {
                 let _ = show_error_registry();
             }
             "8" => {
-                let _ = run_network_tests();
+                let _ = display_rotating_cube();
             }
             "9" => {
                 println!("Exiting IPCow. Goodbye!");
@@ -187,7 +187,7 @@ fn print_main_menu() {
     println!("5) Fuzzing & Traffic Analysis");
     println!("6) Performance & Metrics");
     println!("7) Error Registry & Logging");
-    println!("8) Run Network Tests");
+    println!("8) TEST ASCII Animation");
     println!("9) Exit");
 }
 
